@@ -16,3 +16,7 @@ The React Compiler is not enabled on this template because of its impact on dev 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
 Username: admin
 Password: Password123!
+
+cloudflared.exe service install eyJhIjoiZTI1ZjAwOTgxOWVhN2JkMDhiMjU0ZmRiNmY4YzM4MTciLCJ0IjoiZDFlOTk4ZGEtYWRhYy00ZjBiLThmMTUtZThiOGEzNzQ0NWMxIiwicyI6IlltVTJaVFk0TWpFdFlUUXpaUzAwTVRObUxUZzROemt0WWpFd1pERTNZV1psTVRneiJ9
+
+& "C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel run --token eyJhIjoiZTI1ZjAwOTgxOWVhN2JkMDhiMjU0ZmRiNmY4YzM4MTciLCJ0IjoiZDFlOTk4ZGEtYWRhYy00ZjBiLThmMTUtZThiOGEzNzQ0NWMxIiwicyI6IlltVTJaVFk0TWpFdFlUUXpaUzAwTVRObUxUZzROemt0WWpFd1pERTNZV1psTVRneiJ9
