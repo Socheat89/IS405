@@ -2,12 +2,9 @@
 // Each microservice can be configured independently via environment variables or default local paths
 
 export const API_CONFIG = {
-  // Base API URL for backend dotnet service (Auto-detects production domain vs localhost)
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || (
-    typeof window !== 'undefined' && window.location.hostname.includes('mekongcyberunit.app')
-      ? 'https://api.mekongcyberunit.app/api'
-      : 'http://localhost:5230/api'
-  ),
+  // Base API URL for backend dotnet service
+  // Uses relative '/api' so Vite proxy forwards requests automatically on localhost, Cloudflare tunnels, and production
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || '/api',
   
   // Microservices Endpoints mapping
   ENDPOINTS: {
