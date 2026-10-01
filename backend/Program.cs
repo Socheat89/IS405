@@ -37,12 +37,9 @@ var postgresConn = builder.Configuration.GetConnectionString("PostgreSqlConnecti
                 ?? Environment.GetEnvironmentVariable("DATABASE_URL")
                 ?? Environment.GetEnvironmentVariable("SUPABASE_DB_URL");
 
-if (!string.IsNullOrWhiteSpace(postgresConn) || 
-    string.Equals(dbProvider, "PostgreSql", StringComparison.OrdinalIgnoreCase) || 
-    string.Equals(dbProvider, "Postgres", StringComparison.OrdinalIgnoreCase) || 
-    string.Equals(dbProvider, "Supabase", StringComparison.OrdinalIgnoreCase))
+if (!string.IsNullOrWhiteSpace(postgresConn))
 {
-    var formattedConn = ConvertPostgresUriToConnectionString(postgresConn ?? "");
+    var formattedConn = ConvertPostgresUriToConnectionString(postgresConn);
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(formattedConn));
 }
