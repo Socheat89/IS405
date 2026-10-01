@@ -4,7 +4,7 @@
 export const API_CONFIG = {
   // Base API URL for backend dotnet service
   // Automatically detects Render cloud domain, Vite proxy on localhost, or environment variable
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com') ? 'https://is405-backend.onrender.com/api' : '/api'),
+  BASE_URL: import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '/api' : 'https://is405-backend.onrender.com/api'),
 
   
   // Microservices Endpoints mapping
