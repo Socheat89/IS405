@@ -58,7 +58,7 @@ public class TokenService : ITokenService
 
     public (string Token, DateTimeOffset ExpiresAt) GenerateChallengeToken(AppUser user)
     {
-        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(30);
 
         var claims = new List<Claim>
         {
