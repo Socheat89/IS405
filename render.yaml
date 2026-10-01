@@ -12,7 +12,9 @@ services:
       - key: ASPNETCORE_ENVIRONMENT
         value: Production
       - key: DatabaseProvider
-        value: Sqlite
+        value: Supabase
+      - key: SUPABASE_DB_URL
+        sync: false
       - key: ConnectionStrings__DefaultConnection
         value: Data Source=/app/data/is405.db
 

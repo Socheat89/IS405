@@ -28,8 +28,25 @@ if (!string.IsNullOrEmpty(renderPort))
 }
 
 // 1. Database Configuration
-var dbProvider = builder.Configuration["DatabaseProvider"] ?? "Sqlite";
-if (string.Equals(dbProvider, "Oracle", StringComparison.OrdinalIgnoreCase))
+var dbProvider = builder.Configuration["DatabaseProvider"] 
+              ?? Environment.GetEnvironmentVariable("DATABASE_PROVIDER") 
+              ?? "Sqlite";
+
+var postgresConn = builder.Configuration.GetConnectionString("PostgreSqlConnection")
+                ?? builder.Configuration.GetConnectionString("SupabaseConnection")
+                ?? Environment.GetEnvironmentVariable("DATABASE_URL")
+                ?? Environment.GetEnvironmentVariable("SUPABASE_DB_URL");
+
+if (!string.IsNullOrWhiteSpace(postgresConn) || 
+    string.Equals(dbProvider, "PostgreSql", StringComparison.OrdinalIgnoreCase) || 
+    string.Equals(dbProvider, "Postgres", StringComparison.OrdinalIgnoreCase) || 
+    string.Equals(dbProvider, "Supabase", StringComparison.OrdinalIgnoreCase))
+{
+    var formattedConn = ConvertPostgresUriToConnectionString(postgresConn ?? "");
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseNpgsql(formattedConn));
+}
+else if (string.Equals(dbProvider, "Oracle", StringComparison.OrdinalIgnoreCase))
 {
     var oracleConnection = builder.Configuration.GetConnectionString("OracleConnection")
         ?? throw new InvalidOperationException("OracleConnection string is not configured.");
@@ -187,7 +204,11 @@ using (var scope = app.Services.CreateScope())
             logger.LogInformation("[Database Initialization] Attempt {Attempt}/{MaxRetries}: Connecting and seeding database...", attempt, maxRetries);
             await DbSeeder.SeedAsync(db);
 
-            if (string.Equals(provider, "Oracle", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(provider, "Oracle", StringComparison.OrdinalIgnoreCase) ||
+                !string.IsNullOrWhiteSpace(postgresConn) ||
+                string.Equals(provider, "PostgreSql", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(provider, "Postgres", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(provider, "Supabase", StringComparison.OrdinalIgnoreCase))
             {
                 var sqliteConn = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=is405.db";
                 await DataMigrator.TransferFromSqliteAsync(sqliteConn, db);
@@ -306,5 +327,54 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static string ConvertPostgresUriToConnectionString(string uriOrConnStr)
+{
+    if (string.IsNullOrWhiteSpace(uriOrConnStr)) return uriOrConnStr;
+    uriOrConnStr = uriOrConnStr.Trim();
+
+    if (uriOrConnStr.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        uriOrConnStr.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        try
+        {
+            var stripped = System.Text.RegularExpressions.Regex.Replace(uriOrConnStr, @"^postgres(ql)?://", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var match = System.Text.RegularExpressions.Regex.Match(stripped, @"^(?<user>[^:]+):(?<pwd>.+?)@(?<host>[^:/]+)(:(?<port>\d+))?(/(?<db>[^?]+))?(\?.*)?$");
+            if (match.Success)
+            {
+                var user = match.Groups["user"].Value;
+                var pwd = match.Groups["pwd"].Value;
+                if (pwd.StartsWith("[") && pwd.EndsWith("]"))
+                {
+                    pwd = pwd.Substring(1, pwd.Length - 2);
+                }
+                pwd = Uri.UnescapeDataString(pwd);
+
+                var host = match.Groups["host"].Value;
+                var port = match.Groups["port"].Success ? match.Groups["port"].Value : "5432";
+                var db = match.Groups["db"].Success && !string.IsNullOrWhiteSpace(match.Groups["db"].Value) 
+                    ? match.Groups["db"].Value 
+                    : "postgres";
+
+                return $"Server={host};Port={port};Database={db};User Id={user};Password={pwd};SSL Mode=Require;Trust Server Certificate=true;";
+            }
+
+            var uri = new Uri(uriOrConnStr);
+            var userInfo = uri.UserInfo.Split(':');
+            var u = userInfo.Length > 0 ? Uri.UnescapeDataString(userInfo[0]) : "postgres";
+            var p = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+            if (p.StartsWith("[") && p.EndsWith("]")) p = p.Substring(1, p.Length - 2);
+            var database = uri.AbsolutePath.TrimStart('/');
+            if (string.IsNullOrEmpty(database)) database = "postgres";
+            var prt = uri.Port > 0 ? uri.Port : 5432;
+            return $"Server={uri.Host};Port={prt};Database={database};User Id={u};Password={p};SSL Mode=Require;Trust Server Certificate=true;";
+        }
+        catch
+        {
+            return uriOrConnStr;
+        }
+    }
+    return uriOrConnStr;
+}
 
 public partial class Program { }
