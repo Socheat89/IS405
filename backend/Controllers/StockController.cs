@@ -255,7 +255,7 @@ public class StockController : ControllerBase
         if (itemId.HasValue) query = query.Where(m => m.ItemId == itemId.Value);
 
         var list = await query
-            .OrderByDescending(m => m.CreatedAtUtc)
+            .OrderByDescending(m => m.Id)
             .Take(Math.Clamp(limit, 1, 500))
             .ToListAsync(cancellationToken);
 
@@ -284,7 +284,7 @@ public class StockController : ControllerBase
         if (itemId.HasValue) query = query.Where(m => m.ItemId == itemId.Value);
 
         var list = await query
-            .OrderByDescending(m => m.CreatedAtUtc)
+            .OrderByDescending(m => m.Id)
             .Take(Math.Clamp(limit, 1, 500))
             .ToListAsync(cancellationToken);
 
@@ -495,7 +495,7 @@ public class StockController : ControllerBase
         }
 
         var list = await query
-            .OrderByDescending(m => m.CreatedAtUtc)
+            .OrderByDescending(m => m.Id)
             .Take(Math.Clamp(limit, 1, 500))
             .ToListAsync(cancellationToken);
 

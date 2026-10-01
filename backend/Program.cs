@@ -251,7 +251,9 @@ app.Use(async (context, next) =>
         {
             context.Response.StatusCode = StatusCodes.Status500InternalServerError;
             context.Response.ContentType = "application/json";
-            await context.Response.WriteAsync("{\"message\":\"An unexpected internal server error occurred. Please try again later.\"}");
+            var msg = ex.InnerException != null ? $"{ex.Message} -> {ex.InnerException.Message}" : ex.Message;
+            var safeMsg = System.Text.Json.JsonSerializer.Serialize(new { message = msg, error = ex.GetType().Name });
+            await context.Response.WriteAsync(safeMsg);
         }
     }
 });
