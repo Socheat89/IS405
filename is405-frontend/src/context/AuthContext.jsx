@@ -211,7 +211,12 @@ export const AuthProvider = ({ children }) => {
       setAuthStep('AUTHENTICATED');
     } catch (err) {
       const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Invalid 2FA code';
-      setError(msg);
+      if (String(msg).toLowerCase().includes('challenge token') || String(msg).toLowerCase().includes('expired')) {
+        setError('2FA Session expired. Redirecting to Login...');
+        setTimeout(() => logout(), 1200);
+      } else {
+        setError(msg);
+      }
       throw msg;
     } finally {
       setLoading(false);
@@ -238,7 +243,12 @@ export const AuthProvider = ({ children }) => {
       setAuthStep('AUTHENTICATED');
     } catch (err) {
       const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Invalid 2FA code';
-      setError(msg);
+      if (String(msg).toLowerCase().includes('challenge token') || String(msg).toLowerCase().includes('expired')) {
+        setError('2FA Session expired. Redirecting to Login...');
+        setTimeout(() => logout(), 1200);
+      } else {
+        setError(msg);
+      }
       throw msg;
     } finally {
       setLoading(false);
