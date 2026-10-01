@@ -1,10 +1,21 @@
 // API Microservices Configuration
 // Each microservice can be configured independently via environment variables or default local paths
 
+function getBaseUrl() {
+  let url = import.meta.env.VITE_API_BASE_URL;
+  if (!url) {
+    url = import.meta.env.DEV ? '/api' : 'https://is405-backend.onrender.com/api';
+  }
+  url = url.trim().replace(/\/+$/, '');
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  return url;
+}
+
 export const API_CONFIG = {
   // Base API URL for backend dotnet service
-  // Automatically detects Render cloud domain, Vite proxy on localhost, or environment variable
-  BASE_URL: import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '/api' : 'https://is405-backend.onrender.com/api'),
+  BASE_URL: getBaseUrl(),
 
   
   // Microservices Endpoints mapping

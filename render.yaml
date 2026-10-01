@@ -29,8 +29,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: is405-backend
-          envVarKey: RENDER_EXTERNAL_URL
-          transform: "${RENDER_EXTERNAL_URL}/api"
+        value: https://is405-backend.onrender.com/api
