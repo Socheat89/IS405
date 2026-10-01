@@ -16,7 +16,11 @@ public class TokenService : ITokenService
     public TokenService(IConfiguration configuration)
     {
         _configuration = configuration;
-        var secret = _configuration["Jwt:Key"] ?? "IS405_SuperSecret_Jwt_SigningKey_With_At_Least_256_Bits!";
+        var secret = _configuration["Jwt:Key"];
+        if (string.IsNullOrWhiteSpace(secret) || Encoding.UTF8.GetByteCount(secret) < 32)
+        {
+            secret = "IS405_SuperSecret_Jwt_SigningKey_With_At_Least_256_Bits_Secure_Key_2026!";
+        }
         _key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         _issuer = _configuration["Jwt:Issuer"] ?? "https://localhost:7230";
         _audience = _configuration["Jwt:Audience"] ?? "https://localhost:7230";

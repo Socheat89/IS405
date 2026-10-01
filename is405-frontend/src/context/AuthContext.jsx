@@ -29,16 +29,32 @@ function extractRolesFromJwt(payload) {
 }
 
 
+function isTokenValidAndNotExpired(token) {
+  if (!token || typeof token !== 'string' || token === 'undefined' || token === 'null') return false;
+  const payload = decodeJwt(token);
+  if (!payload) return false;
+  if (payload.exp && payload.exp * 1000 <= Date.now()) return false;
+  if (payload.token_type === '2fa_challenge') return false;
+  return true;
+}
+
 export const AuthProvider = ({ children }) => {
   // ── State ──────────────────────────────────────────────────────────────────
-  const [token, setToken] = useState(
-    () => localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) || null
-  );
+  const [token, setToken] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    if (isTokenValidAndNotExpired(saved)) return saved;
+    try { localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN); } catch { }
+    return null;
+  });
   const [user, setUser] = useState(() => {
+    const savedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    if (!isTokenValidAndNotExpired(savedToken)) return null;
     const saved = localStorage.getItem(STORAGE_KEYS.USER_INFO);
     return saved ? JSON.parse(saved) : null;
   });
   const [permissions, setPermissions] = useState(() => {
+    const savedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    if (!isTokenValidAndNotExpired(savedToken)) return [];
     try {
       const saved = localStorage.getItem('is405_user_permissions');
       return saved ? JSON.parse(saved) : [];
@@ -51,11 +67,16 @@ export const AuthProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : null;
   });
   const [authStep, setAuthStep] = useState(() => {
-    if (localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)) return 'AUTHENTICATED';
+    const savedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+    if (isTokenValidAndNotExpired(savedToken)) return 'AUTHENTICATED';
     const pending = localStorage.getItem(STORAGE_KEYS.TWO_FACTOR_PENDING);
     if (pending) {
-      const parsed = JSON.parse(pending);
-      return parsed.requiresSetup ? 'SETUP_2FA' : 'VERIFY_2FA';
+      try {
+        const parsed = JSON.parse(pending);
+        return parsed.requiresSetup ? 'SETUP_2FA' : 'VERIFY_2FA';
+      } catch {
+        return 'LOGIN';
+      }
     }
     return 'LOGIN';
   });
@@ -139,6 +160,10 @@ export const AuthProvider = ({ children }) => {
     // Run immediately on mount / when auth state changes
     refreshPermissions();
 
+    const handleUnauthorized = () => {
+      logout();
+    };
+
     // Poll every 2 seconds for real-time updates
     const intervalId = setInterval(refreshPermissions, 2000);
 
@@ -148,6 +173,7 @@ export const AuthProvider = ({ children }) => {
     window.addEventListener('permissions_updated', refreshPermissions);
     window.addEventListener('roles_updated',       refreshPermissions);
     window.addEventListener('users_updated',       refreshPermissions);
+    window.addEventListener('auth_unauthorized',   handleUnauthorized);
 
     return () => {
       clearInterval(intervalId);
@@ -156,6 +182,7 @@ export const AuthProvider = ({ children }) => {
       window.removeEventListener('permissions_updated', refreshPermissions);
       window.removeEventListener('roles_updated',       refreshPermissions);
       window.removeEventListener('users_updated',       refreshPermissions);
+      window.removeEventListener('auth_unauthorized',   handleUnauthorized);
     };
   }, [token, authStep, refreshPermissions]);
 
