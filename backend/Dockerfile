@@ -17,12 +17,10 @@ WORKDIR /app
 # Directory for SQLite database persistence
 RUN mkdir -p /app/data
 
-# Configure ASP.NET to listen on port 5000
 ENV ASPNETCORE_URLS=http://+:5000
-ENV ASPNETCORE_ENVIRONMENT=Development
+ENV ASPNETCORE_ENVIRONMENT=Production
 EXPOSE 5000
 
 COPY --from=build /app/publish .
-COPY is405.db /app/is405.db
 
 ENTRYPOINT ["dotnet", "backend.dll"]

@@ -1,0 +1,38 @@
+services:
+  # 1. Backend Web Service (.NET API with SQLite)
+  - type: web
+    name: is405-backend
+    env: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    region: singapore
+    healthCheckPath: /swagger/v1/swagger.json
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: DatabaseProvider
+        value: Sqlite
+      - key: ConnectionStrings__DefaultConnection
+        value: Data Source=/app/data/is405.db
+
+  # 2. Frontend Static Site (React + Vite)
+  - type: web
+    name: is405-frontend
+    env: static
+    rootDir: is405-frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    plan: free
+    region: singapore
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: is405-backend
+          envVarKey: RENDER_EXTERNAL_URL
+          transform: "${RENDER_EXTERNAL_URL}/api"
