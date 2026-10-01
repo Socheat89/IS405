@@ -376,6 +376,14 @@ static string ConvertPostgresUriToConnectionString(string uriOrConnStr)
             return uriOrConnStr;
         }
     }
+
+    // For standard ADO.NET connection strings, ensure SSL Mode is set for Supabase cloud
+    if (!uriOrConnStr.Contains("SSL Mode", StringComparison.OrdinalIgnoreCase) && 
+        (uriOrConnStr.Contains("supabase.co", StringComparison.OrdinalIgnoreCase) || uriOrConnStr.Contains("pooler.supabase.com", StringComparison.OrdinalIgnoreCase)))
+    {
+        uriOrConnStr = uriOrConnStr.TrimEnd(';') + ";SSL Mode=Require;Trust Server Certificate=true;";
+    }
+
     return uriOrConnStr;
 }
 
