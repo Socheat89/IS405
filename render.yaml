@@ -23,8 +23,6 @@ services:
     rootDir: is405-frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
-    plan: free
-    region: singapore
     routes:
       - type: rewrite
         source: /*
