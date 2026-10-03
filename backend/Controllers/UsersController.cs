@@ -80,6 +80,27 @@ public class UsersController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("me")]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCurrentUser(CancellationToken cancellationToken)
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null)
+        {
+            return Unauthorized(new { message = "Missing or invalid access token" });
+        }
+
+        var dto = await GetUserByIdWithDetailsAsync(userId.Value, cancellationToken);
+        if (dto == null)
+        {
+            return NotFound(new { message = "User not found." });
+        }
+
+        return Ok(dto);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

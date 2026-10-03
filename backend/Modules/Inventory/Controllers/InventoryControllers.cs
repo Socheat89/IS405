@@ -112,6 +112,23 @@ public class WarehousesController : ControllerBase
         return Ok(updated);
     }
 
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteWarehouse(int id, CancellationToken cancellationToken)
+    {
+        var userId = backend.Services.Permission.PermissionChecker.GetUserId(User);
+        if (userId == null) return Unauthorized();
+        if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(_context, userId.Value, "warehouses.create", "warehouses-list.create", "warehouses.view"))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: Insufficient permissions to delete warehouses." });
+        }
+
+        var deleted = await _inventoryService.DeleteWarehouseAsync(id, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+        if (!deleted) return NotFound(new { message = $"Warehouse with ID {id} not found." });
+        return NoContent();
+    }
+
     private int? GetCurrentUserId()
     {
         var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? User.FindFirst("sub")?.Value;
@@ -151,6 +168,19 @@ public class InventoryController : ControllerBase
         if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(_context, userId.Value, "stock.view", "stock-items.view", "warehouses.view", "transfers.view"))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: Insufficient permissions for inventory stocks." });
+        }
+
+        var allowedWarehouseIds = await backend.Services.Permission.PermissionChecker.GetAllowedWarehouseIdsAsync(_context, userId.Value);
+        if (allowedWarehouseIds != null && allowedWarehouseIds.Count > 0)
+        {
+            if (warehouseId.HasValue && !allowedWarehouseIds.Contains(warehouseId.Value))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: You do not have access to view stocks in this warehouse." });
+            }
+            if (!warehouseId.HasValue)
+            {
+                warehouseId = allowedWarehouseIds[0];
+            }
         }
 
         var result = await _inventoryService.GetWarehouseStocksAsync(warehouseId, productId, search, page, pageSize, cancellationToken);
@@ -282,6 +312,19 @@ public class TransfersController : ControllerBase
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: You do not have permission to view stock transfers." });
         }
 
+        var allowedWarehouseIds = await backend.Services.Permission.PermissionChecker.GetAllowedWarehouseIdsAsync(_context, userId.Value);
+        if (allowedWarehouseIds != null && allowedWarehouseIds.Count > 0)
+        {
+            if (warehouseId.HasValue && !allowedWarehouseIds.Contains(warehouseId.Value))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: You do not have access to transfers for this warehouse." });
+            }
+            if (!warehouseId.HasValue && allowedWarehouseIds.Count == 1)
+            {
+                warehouseId = allowedWarehouseIds[0];
+            }
+        }
+
         var result = await _inventoryService.GetTransfersAsync(status, warehouseId, page, pageSize, cancellationToken);
         return Ok(result);
     }
@@ -295,6 +338,15 @@ public class TransfersController : ControllerBase
         if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(_context, userId.Value, "transfers.create"))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: You do not have permission to create stock transfers." });
+        }
+
+        var allowedWarehouseIds = await backend.Services.Permission.PermissionChecker.GetAllowedWarehouseIdsAsync(_context, userId.Value);
+        if (allowedWarehouseIds != null && allowedWarehouseIds.Count > 0)
+        {
+            if (!allowedWarehouseIds.Contains(request.FromWarehouseId))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: You can only transfer stock from your assigned warehouse." });
+            }
         }
 
         try
@@ -339,6 +391,28 @@ public class TransfersController : ControllerBase
         if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(_context, userId.Value, "transfers.create"))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: You do not have permission to cancel stock transfers." });
+        }
+
+        try
+        {
+            var result = await _inventoryService.CancelTransferAsync(id, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(typeof(StockTransferDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeleteOrCancelTransfer(int id, CancellationToken cancellationToken)
+    {
+        var userId = backend.Services.Permission.PermissionChecker.GetUserId(User);
+        if (userId == null) return Unauthorized();
+        if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(_context, userId.Value, "transfers.create", "transfers.view"))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: Insufficient permissions to cancel/delete transfers." });
         }
 
         try

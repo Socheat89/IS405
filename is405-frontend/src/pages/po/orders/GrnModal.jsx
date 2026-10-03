@@ -2,14 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { X, Truck, AlertTriangle, CheckCircle2, PackageCheck, Layers, FileText } from 'lucide-react';
 
 export const GrnModal = ({ isOpen, onClose, po, onSaveGrn }) => {
-  if (!isOpen || !po) return null;
-
   const [receiptItems, setReceiptItems] = useState([]);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (!isOpen || !po) return;
     setError('');
     setNotes('');
     if (po && po.items) {
@@ -35,8 +34,7 @@ export const GrnModal = ({ isOpen, onClose, po, onSaveGrn }) => {
 
   const updateItemField = (index, field, value) => {
     const updated = [...receiptItems];
-    const numVal = Math.max(0, Number(value) || 0);
-    updated[index][field] = field === 'remarks' ? value : numVal;
+    updated[index][field] = field === 'remarks' ? value : (value === '' ? '' : Math.max(0, Number(value)));
     setReceiptItems(updated);
   };
 
@@ -105,6 +103,8 @@ export const GrnModal = ({ isOpen, onClose, po, onSaveGrn }) => {
       setSubmitting(false);
     }
   };
+
+  if (!isOpen || !po) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -210,8 +210,10 @@ export const GrnModal = ({ isOpen, onClose, po, onSaveGrn }) => {
                         <input
                           type="number"
                           min="0"
-                          value={item.receivedQuantity}
+                          value={item.receivedQuantity === 0 || item.receivedQuantity === '' ? '' : item.receivedQuantity}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => updateItemField(idx, 'receivedQuantity', e.target.value)}
+                          placeholder="0"
                           className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                         />
                       </div>
@@ -223,8 +225,10 @@ export const GrnModal = ({ isOpen, onClose, po, onSaveGrn }) => {
                         <input
                           type="number"
                           min="0"
-                          value={item.damagedQuantity}
+                          value={item.damagedQuantity === 0 || item.damagedQuantity === '' ? '' : item.damagedQuantity}
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => updateItemField(idx, 'damagedQuantity', e.target.value)}
+                          placeholder="0"
                           className="w-full px-3 py-1.5 bg-white border border-rose-200 rounded-xl text-xs font-mono font-bold text-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-500/40"
                         />
                       </div>

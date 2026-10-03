@@ -58,7 +58,7 @@ export const VerifyTwoFactorPage = () => {
   const submitCode = async (codeToSubmit) => {
     const code = codeToSubmit || fullCode;
     if (code.length !== 6) {
-      setError('សូមបញ្ចូលលេខកូដសម្ងាត់ ៦ ខ្ទង់ពី Authenticator App');
+      setError('Please enter the 6-digit passcode from your Authenticator App');
       return;
     }
     try {
@@ -103,7 +103,7 @@ export const VerifyTwoFactorPage = () => {
               Two-Factor Verification
             </h1>
             <p className="text-sky-100 text-xs mt-1 font-medium">
-              បញ្ចូលលេខកូដសុវត្ថិភាព ៦ ខ្ទង់ពី Authenticator App របស់អ្នក
+              Enter the 6-digit verification code from your Authenticator App
             </p>
           </div>
         </div>
@@ -163,7 +163,7 @@ export const VerifyTwoFactorPage = () => {
               {loading ? (
                 <span className="inline-flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>កំពុងផ្ទៀងផ្ទាត់លេខកូដ...</span>
+                  <span>Verifying passcode...</span>
                 </span>
               ) : (
                 <>

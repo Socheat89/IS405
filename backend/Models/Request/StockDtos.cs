@@ -1,29 +1,46 @@
 namespace backend.Models.Request;
 
 public record CreateStockItemRequest(
-    string Sku,
+    string? Sku,
     string? Barcode,
     string Name,
     string? Description,
     int? CategoryId,
-    string Unit,
-    decimal CostPrice,
-    decimal SellingPrice,
-    int InitialQuantity,
-    int MinStockLevel,
+    string? CategoryName,
+    string? Unit,
+    decimal? CostPrice,
+    decimal? SellingPrice,
+    decimal? UnitPrice,
+    int? InitialQuantity,
+    int? QuantityOnHand,
+    int? MinStockLevel,
+    int? ReorderLevel,
     string? Location
 );
 
 public record UpdateStockItemRequest(
-    string Name,
+    string? Sku,
+    string? Barcode,
+    string? Name,
     string? Description,
     int? CategoryId,
-    string Unit,
-    decimal CostPrice,
-    decimal SellingPrice,
-    int MinStockLevel,
+    string? CategoryName,
+    string? Unit,
+    decimal? CostPrice,
+    decimal? SellingPrice,
+    decimal? UnitPrice,
+    int? QuantityOnHand,
+    int? MinStockLevel,
+    int? ReorderLevel,
     string? Location,
-    bool IsActive
+    bool? IsActive
+);
+
+public record StockAdjustmentItemRequest(
+    int? AdjustmentQuantity,
+    int? NewQuantity,
+    string? Reason,
+    string? Notes
 );
 
 public record StockInRequest(
@@ -62,8 +79,10 @@ public record StockItemResponse(
     string Unit,
     decimal CostPrice,
     decimal SellingPrice,
+    decimal UnitPrice,
     int QuantityOnHand,
     int MinStockLevel,
+    int ReorderLevel,
     string? Location,
     bool IsActive,
     string Status, // "InStock", "LowStock", "OutOfStock"

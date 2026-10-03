@@ -33,4 +33,9 @@ public interface IRoleService
         List<int> permissionIds,
         int actorUserId,
         CancellationToken cancellationToken);
+
+    Task<RoleServiceResult<bool>> DeleteAsync(
+        int id,
+        int actorUserId,
+        CancellationToken cancellationToken);
 }

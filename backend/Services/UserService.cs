@@ -217,11 +217,26 @@ public class UserService : IUserService
         await _context.SaveChangesAsync(cancellationToken);
         _ipLockoutService.ResetFailedAttempts(ipAddress);
 
-        // MANDATORY 2FA FOR ALL USERS: Every user must complete 2FA before entering the system.
+        // If 2FA is disabled for this user, directly issue access token and log in immediately
+        if (!user.TwoFactorEnabled)
+        {
+            var roles = user.UserRoles.Select(ur => ur.Role.Code).ToList();
+            var (accessToken, expiresAt) = _tokenService.GenerateAccessToken(user, roles);
+
+            return UserServiceResult<LoginResponse>.Success(
+                new LoginResponse(
+                    RequiresTwoFactor: false,
+                    AccessToken: accessToken,
+                    ChallengeToken: null,
+                    ExpiresAtUtc: expiresAt,
+                    RequiresSetup: false));
+        }
+
+        // 2FA is enabled for this user -> require 2FA challenge
         var (challengeToken, challengeExpiresAt) = _tokenService.GenerateChallengeToken(user);
 
-        // Case 1: User has already setup and enabled 2FA -> Prompt for 6-digit TOTP code
-        if (user.TwoFactorEnabled && !string.IsNullOrEmpty(user.TwoFactorSecret))
+        // Case 1: User has already setup 2FA -> Prompt for 6-digit TOTP code
+        if (!string.IsNullOrEmpty(user.TwoFactorSecret))
         {
             return UserServiceResult<LoginResponse>.Success(
                 new LoginResponse(
@@ -232,14 +247,11 @@ public class UserService : IUserService
                     RequiresSetup: false));
         }
 
-        // Case 2: First-time login or 2FA not yet enabled -> Force user to Setup 2FA
-        if (string.IsNullOrEmpty(user.TwoFactorSecret))
-        {
-            var secretBytes = KeyGeneration.GenerateRandomKey(20);
-            user.TwoFactorSecret = Base32Encoding.ToString(secretBytes);
-            user.UpdatedAtUtc = DateTimeOffset.UtcNow;
-            await _context.SaveChangesAsync(cancellationToken);
-        }
+        // Case 2: 2FA is enabled but secret is not yet setup -> Prompt user to Setup 2FA
+        var secretBytes = KeyGeneration.GenerateRandomKey(20);
+        user.TwoFactorSecret = Base32Encoding.ToString(secretBytes);
+        user.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
 
         var issuer = _configuration["TwoFactor:Issuer"] ?? "Mekong Stock";
         var otpAuthUri = $"otpauth://totp/{Uri.EscapeDataString(issuer)}:{Uri.EscapeDataString(user.Email)}?secret={user.TwoFactorSecret}&issuer={Uri.EscapeDataString(issuer)}&digits=6";

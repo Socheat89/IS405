@@ -75,11 +75,11 @@ export const UserListPage = () => {
       if (modalMode === 'edit' && userId) {
         if (!canEdit) return;
         await userService.updateUser(userId, userData);
-        toast.success(`បានរក្សាទុក និងកែប្រែគណនី '${userData.username}' បានជោគជ័យ!`);
+        toast.success(`User '${userData.username}' updated successfully!`);
       } else {
         if (!canCreate) return;
         await userService.createUser(userData);
-        toast.success(`បានបង្កើតគណនី '${userData.username}' និងរៀបចំ Invitation បានជោគជ័យ!`);
+        toast.success(`User '${userData.username}' created and invitation prepared!`);
       }
       window.dispatchEvent(new Event('users_updated'));
       window.dispatchEvent(new Event('permissions_updated'));
@@ -96,7 +96,7 @@ export const UserListPage = () => {
     if (!deleteConfirm.user || !canDelete) return;
     await withErrorHandling(async () => {
       await userService.deleteUser(deleteConfirm.user.id);
-      toast.success(`បានលុបគណនី '${deleteConfirm.user.username}' រួចរាល់!`);
+      toast.success(`User '${deleteConfirm.user.username}' deleted successfully!`);
       setDeleteConfirm({ isOpen: false, user: null });
       window.dispatchEvent(new Event('users_updated'));
       window.dispatchEvent(new Event('permissions_updated'));
@@ -108,9 +108,21 @@ export const UserListPage = () => {
     if (!canEdit) return;
     await withErrorHandling(async () => {
       await userService.toggleUserStatus(userId);
-      toast.success('បានផ្លាស់ប្តូរស្ថានភាពគណនីបានជោគជ័យ!');
+      toast.success('User status updated successfully!');
       window.dispatchEvent(new Event('users_updated'));
       window.dispatchEvent(new Event('permissions_updated'));
+      await fetchUsers();
+    });
+  };
+
+  const handleToggle2FA = async (userId, currentStatus, username) => {
+    if (!canEdit) return;
+    await withErrorHandling(async () => {
+      await userService.toggleTwoFactor(userId);
+      toast.success(currentStatus 
+        ? `2FA disabled for user '${username}' successfully!` 
+        : `2FA enabled for user '${username}' successfully!`);
+      window.dispatchEvent(new Event('users_updated'));
       await fetchUsers();
     });
   };
@@ -118,7 +130,7 @@ export const UserListPage = () => {
   const handleResendInvite = async (user) => {
     await withErrorHandling(async () => {
       const res = await userService.resendInvitation(user.id);
-      toast.success(`បានបង្កើត Invitation Link ថ្មី និងផ្ញើទៅកាន់ ${user.email}!`, 'Resent Invitation');
+      toast.success(`New invitation link generated and sent to ${user.email}!`, 'Resent Invitation');
       await fetchUsers();
     });
   };
@@ -126,7 +138,7 @@ export const UserListPage = () => {
   const handleCopyInviteLink = (link) => {
     if (!link) return;
     navigator.clipboard.writeText(link);
-    toast.info('បានចម្លង Invitation Link ទៅកាន់ Clipboard រួចរាល់!', 'Copied Link');
+    toast.info('Invitation link copied to clipboard!', 'Copied Link');
   };
 
   const metrics = useMemo(() => {
@@ -263,7 +275,7 @@ export const UserListPage = () => {
                   <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
                     <th className="py-3.5 px-4">User</th>
                     <th className="py-3.5 px-4">Role</th>
-                    <th className="py-3.5 px-4">Assigned Warehouses (ឃ្លាំង)</th>
+                    <th className="py-3.5 px-4">Assigned Warehouses</th>
                     <th className="py-3.5 px-4">Status</th>
                     <th className="py-3.5 px-4">Security (2FA)</th>
                     {(canEdit || canDelete) && (
@@ -316,7 +328,7 @@ export const UserListPage = () => {
                         <td className="py-3.5 px-4">
                           {isAdmin ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                              👑 គ្រប់ឃ្លាំងទាំងអស់ (All Warehouses)
+                              👑 All Warehouses
                             </span>
                           ) : warehouseList.length > 0 ? (
                             <div className="flex flex-wrap gap-1 max-w-[260px]">
@@ -328,7 +340,7 @@ export const UserListPage = () => {
                             </div>
                           ) : (
                             <span className="text-[10px] font-medium text-slate-400 italic">
-                              គ្មានឃ្លាំង (No Access)
+                              No Warehouse Access
                             </span>
                           )}
                         </td>
@@ -350,15 +362,31 @@ export const UserListPage = () => {
                         </td>
 
                         <td className="py-3.5 px-4">
-                          {u.twoFactorEnabled ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                              <ShieldCheck className="w-3 h-3" /> Enabled
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                              <ShieldAlert className="w-3 h-3" /> Pending
-                            </span>
-                          )}
+                          <button
+                            type="button"
+                            disabled={!canEdit}
+                            onClick={() => handleToggle2FA(u.id, u.twoFactorEnabled, u.username)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-all border ${
+                              !canEdit ? 'cursor-default' : 'cursor-pointer hover:opacity-80 active:scale-95'
+                            } ${
+                              u.twoFactorEnabled
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-slate-100 text-slate-600 border-slate-200'
+                            }`}
+                            title={canEdit ? (u.twoFactorEnabled ? 'Click to Disable 2FA' : 'Click to Enable 2FA') : undefined}
+                          >
+                            {u.twoFactorEnabled ? (
+                              <>
+                                <ShieldCheck className="w-3.5 h-3.5 text-blue-600" />
+                                <span>Enabled</span>
+                              </>
+                            ) : (
+                              <>
+                                <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Disabled</span>
+                              </>
+                            )}
+                          </button>
                         </td>
 
                         {(canEdit || canDelete) && (

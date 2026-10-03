@@ -180,6 +180,42 @@ public class RolesController : ControllerBase
         return Ok(result.Value);
     }
 
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
+    {
+        if (!User.IsInRole("ADMIN"))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Only administrators can delete system roles." });
+        }
+
+        var actorUserId = GetCurrentUserId();
+        if (actorUserId == null)
+        {
+            return Unauthorized(new { message = "Missing or invalid access token" });
+        }
+
+        var result = await _roleService.DeleteAsync(id, actorUserId.Value, cancellationToken);
+        if (!result.Succeeded)
+        {
+            return StatusCode(result.StatusCode, new { message = result.Message });
+        }
+
+        await _auditService.LogAsync(
+            action: "DELETE_ROLE",
+            entityName: "AppRole",
+            entityId: id.ToString(),
+            description: $"Deleted system role ID {id}",
+            userId: actorUserId,
+            username: GetCurrentUsername(),
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString(),
+            cancellationToken: cancellationToken);
+
+        return NoContent();
+    }
+
     private int? GetCurrentUserId()
     {
         var idClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value

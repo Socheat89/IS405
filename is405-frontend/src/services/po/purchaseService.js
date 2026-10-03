@@ -43,8 +43,8 @@ export const purchaseService = {
   },
 
   /** POST /purchases/orders/:id/approve */
-  async approveOrder(poId) {
-    const response = await apiClient.post(`/purchases/orders/${poId}/approve`);
+  async approveOrder(poId, approvalData = null) {
+    const response = await apiClient.post(`/purchases/orders/${poId}/approve`, approvalData || {});
     return response?.data || { success: true };
   },
 
@@ -76,5 +76,26 @@ export const purchaseService = {
   async deletePurchaseOrder(id) {
     await apiClient.delete(`/purchases/orders/${id}`);
     return true;
+  },
+
+  /** GET /suppliers */
+  async getSuppliers() {
+    try {
+      const response = await apiClient.get('/suppliers', { params: { pageSize: 100 } });
+      const list = response?.data?.items || (Array.isArray(response?.data) ? response.data : []);
+      return list;
+    } catch {
+      return [];
+    }
+  },
+
+  /** GET /warehouses */
+  async getWarehouses() {
+    try {
+      const response = await apiClient.get('/warehouses', { params: { onlyActive: true } });
+      return Array.isArray(response?.data) ? response.data : (response?.data?.items || []);
+    } catch {
+      return [];
+    }
   },
 };

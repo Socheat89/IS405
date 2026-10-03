@@ -15,6 +15,7 @@ public interface IInventoryService
     Task<WarehouseDto?> GetWarehouseByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<WarehouseDto> CreateWarehouseAsync(CreateWarehouseRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<WarehouseDto?> UpdateWarehouseAsync(int id, UpdateWarehouseRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<bool> DeleteWarehouseAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default);
 
     // Stock Levels & Balances
     Task<PagedResult<WarehouseStockDto>> GetWarehouseStocksAsync(int? warehouseId, int? productId, string? search, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
@@ -102,6 +103,17 @@ public class InventoryService : IInventoryService
         await _context.SaveChangesAsync(cancellationToken);
         await _auditService.LogAsync("UPDATE", "Warehouse", w.Id.ToString(), $"Updated warehouse '{w.Name}'", userId: userId, username: username, cancellationToken: cancellationToken);
         return new WarehouseDto(w.Id, w.Code, w.Name, w.Location, w.ContactPhone, w.IsActive, w.CreatedAtUtc);
+    }
+
+    public async Task<bool> DeleteWarehouseAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var w = await _context.Warehouses.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
+        if (w == null) return false;
+
+        w.IsActive = false;
+        await _context.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync("DELETE", "Warehouse", w.Id.ToString(), $"Deactivated warehouse '{w.Name}'", userId: userId, username: username, cancellationToken: cancellationToken);
+        return true;
     }
 
     public async Task<PagedResult<WarehouseStockDto>> GetWarehouseStocksAsync(
@@ -453,12 +465,12 @@ public class InventoryService : IInventoryService
     {
         if (request.FromWarehouseId == request.ToWarehouseId)
         {
-            throw new InvalidOperationException("Source and destination warehouses cannot be the same.");
+            throw new InvalidOperationException("Source and destination warehouses cannot be the same facility.");
         }
 
         if (request.Items == null || request.Items.Count == 0)
         {
-            throw new InvalidOperationException("Transfer must contain at least one item.");
+            throw new InvalidOperationException("Transfer must contain at least one valid item.");
         }
 
         var fromWh = await _context.Warehouses.FirstOrDefaultAsync(w => w.Id == request.FromWarehouseId, cancellationToken);
@@ -466,7 +478,7 @@ public class InventoryService : IInventoryService
         if (fromWh == null || toWh == null)
             throw new KeyNotFoundException("One or both warehouses could not be found.");
 
-        var transferNo = $"TR-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}";
+        var transferNo = $"TR-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}-{Random.Shared.Next(100, 999)}";
         var transfer = new StockTransfer
         {
             TransferNo = transferNo,
@@ -483,13 +495,46 @@ public class InventoryService : IInventoryService
         {
             if (item.Quantity <= 0) throw new InvalidOperationException("Transfer quantity must be greater than zero.");
 
-            // Check stock in source warehouse
+            var prod = await _context.StockItems.FirstOrDefaultAsync(p => p.Id == item.ProductId, cancellationToken);
+            if (prod == null) throw new KeyNotFoundException($"Product with ID {item.ProductId} not found.");
+
+            // Check stock in source warehouse, auto-syncing from global stock if record doesn't exist
             var ws = await _context.WarehouseStocks.FirstOrDefaultAsync(s => s.WarehouseId == request.FromWarehouseId && s.ProductId == item.ProductId, cancellationToken);
-            var avail = ws?.QuantityOnHand ?? 0;
+            if (ws == null)
+            {
+                ws = new WarehouseStock
+                {
+                    WarehouseId = request.FromWarehouseId,
+                    ProductId = item.ProductId,
+                    QuantityOnHand = prod.QuantityOnHand,
+                    ReservedQuantity = 0,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow
+                };
+                _context.WarehouseStocks.Add(ws);
+            }
+            else if (ws.QuantityOnHand == 0 && prod.QuantityOnHand > 0)
+            {
+                var otherWsCount = await _context.WarehouseStocks.CountAsync(s => s.ProductId == item.ProductId && s.WarehouseId != request.FromWarehouseId, cancellationToken);
+                if (otherWsCount == 0)
+                {
+                    ws.QuantityOnHand = prod.QuantityOnHand;
+                    ws.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                }
+            }
+
+            var avail = ws.QuantityOnHand;
             if (avail < item.Quantity)
             {
-                var prod = await _context.StockItems.FirstOrDefaultAsync(p => p.Id == item.ProductId, cancellationToken);
-                throw new InvalidOperationException($"Insufficient stock for '{prod?.Name ?? "Product"}'. Available in {fromWh.Name}: {avail}, Requested: {item.Quantity}");
+                if (prod.QuantityOnHand >= item.Quantity)
+                {
+                    ws.QuantityOnHand = prod.QuantityOnHand;
+                    avail = ws.QuantityOnHand;
+                }
+            }
+
+            if (avail < item.Quantity)
+            {
+                throw new InvalidOperationException($"Insufficient stock for '{prod.Name}'. Available in {fromWh.Name}: {avail}, Requested: {item.Quantity}");
             }
 
             transfer.Items.Add(new StockTransferItem
@@ -519,15 +564,37 @@ public class InventoryService : IInventoryService
         if (transfer == null) throw new KeyNotFoundException($"Stock transfer with ID {transferId} not found.");
         if (transfer.Status != "PENDING") throw new InvalidOperationException($"Cannot complete transfer in '{transfer.Status}' status.");
 
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
         foreach (var item in transfer.Items)
         {
             var product = item.Product ?? await _context.StockItems.FirstAsync(p => p.Id == item.ProductId, cancellationToken);
 
             // Deduct from source warehouse
             var sourceWs = await _context.WarehouseStocks.FirstOrDefaultAsync(s => s.WarehouseId == transfer.FromWarehouseId && s.ProductId == item.ProductId, cancellationToken);
-            if (sourceWs == null || sourceWs.QuantityOnHand < item.Quantity)
+            if (sourceWs == null)
             {
-                throw new InvalidOperationException($"Insufficient stock for '{product.Name}' in source warehouse.");
+                sourceWs = new WarehouseStock
+                {
+                    WarehouseId = transfer.FromWarehouseId,
+                    ProductId = item.ProductId,
+                    QuantityOnHand = Math.Max(0, product.QuantityOnHand),
+                    ReservedQuantity = 0,
+                    UpdatedAtUtc = DateTimeOffset.UtcNow
+                };
+                _context.WarehouseStocks.Add(sourceWs);
+            }
+
+            if (sourceWs.QuantityOnHand < item.Quantity)
+            {
+                if (product.QuantityOnHand >= item.Quantity)
+                {
+                    sourceWs.QuantityOnHand = product.QuantityOnHand;
+                }
+                else
+                {
+                    throw new InvalidOperationException($"Insufficient stock for '{product.Name}' in source warehouse {transfer.FromWarehouse?.Name}. Available: {sourceWs.QuantityOnHand}, Requested: {item.Quantity}");
+                }
             }
             var srcBefore = sourceWs.QuantityOnHand;
             sourceWs.QuantityOnHand -= item.Quantity;
@@ -592,6 +659,7 @@ public class InventoryService : IInventoryService
         transfer.Status = "COMPLETED";
         transfer.CompletedAtUtc = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         await _auditService.LogAsync("APPROVE", "StockTransfer", transfer.Id.ToString(), $"Completed stock transfer {transfer.TransferNo}", userId: userId, username: username, cancellationToken: cancellationToken);
 

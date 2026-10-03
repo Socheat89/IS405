@@ -11,8 +11,6 @@ import { warehouseService } from '../../services/stock/warehouseService';
 import { checkPasswordStrength } from '../../utils/passwordPolicy';
 
 export const UserModal = ({ isOpen, onClose, onSave, initialUser = null, mode = 'create' }) => {
-  if (!isOpen) return null;
-
   const [username, setUsername] = useState(initialUser?.username || '');
   const [email, setEmail] = useState(initialUser?.email || '');
   const [password, setPassword] = useState('');
@@ -37,6 +35,7 @@ export const UserModal = ({ isOpen, onClose, onSave, initialUser = null, mode = 
 
   // Fetch available system roles, permissions & warehouses
   useEffect(() => {
+    if (!isOpen) return;
     let isMounted = true;
     async function loadData() {
       setLoadingData(true);
@@ -281,6 +280,8 @@ export const UserModal = ({ isOpen, onClose, onSave, initialUser = null, mode = 
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="erp-modal-overlay animate-fade-in" onClick={onClose}>
       <div 
@@ -298,7 +299,7 @@ export const UserModal = ({ isOpen, onClose, onSave, initialUser = null, mode = 
                 {mode === 'edit' ? `Edit User (${initialUser?.username})` : 'Create User & Assign Warehouse'}
               </h2>
               <p className="text-xs text-sky-100 mt-0.5 font-medium">
-                កំណត់គណនី, តួនាទី (Role), សិទ្ធិឃ្លាំង (Warehouses), និងសិទ្ធិលម្អិត
+                Configure user account, roles, warehouse assignments, and granular permissions
               </p>
             </div>
           </div>

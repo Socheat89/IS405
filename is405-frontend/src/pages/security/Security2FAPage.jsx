@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { authService } from '../../services/auth/authService';
+import { userService } from '../../services/users/userService';
 import { useToast } from '../../context/ToastContext';
 
 export const Security2FAPage = () => {
@@ -14,7 +15,7 @@ export const Security2FAPage = () => {
   const toast = useToast();
 
   const [is2FAEnabled, setIs2FAEnabled] = useState(() => {
-    return user?.twoFactorEnabled ?? true;
+    return Boolean(user?.twoFactorEnabled);
   });
 
   const [setupData, setSetupData] = useState(null);
@@ -31,10 +32,32 @@ export const Security2FAPage = () => {
   const [disabling, setDisabling] = useState(false);
   const [disableError, setDisableError] = useState('');
 
+  // Fetch true server profile on mount
+  useEffect(() => {
+    let mounted = true;
+    userService.getCurrentUser()
+      .then(profile => {
+        if (!mounted || !profile) return;
+        const enabled = Boolean(profile.twoFactorEnabled);
+        setIs2FAEnabled(enabled);
+        const savedUser = localStorage.getItem('is405_user_info');
+        if (savedUser) {
+          try {
+            const parsed = JSON.parse(savedUser);
+            parsed.twoFactorEnabled = enabled;
+            parsed.id = profile.id;
+            localStorage.setItem('is405_user_info', JSON.stringify(parsed));
+          } catch { /* ignore */ }
+        }
+      })
+      .catch(err => console.warn('Failed to fetch user profile:', err));
+    return () => { mounted = false; };
+  }, []);
+
   // Sync state with user info
   useEffect(() => {
     if (user?.twoFactorEnabled !== undefined) {
-      setIs2FAEnabled(user.twoFactorEnabled);
+      setIs2FAEnabled(Boolean(user.twoFactorEnabled));
     }
   }, [user]);
 
@@ -65,7 +88,7 @@ export const Security2FAPage = () => {
     if (!text) return;
     navigator.clipboard.writeText(text);
     setCopied(true);
-    toast.info('បានចម្លង Secret Key ទៅកាន់ Clipboard រួចរាល់!', 'Copied Key');
+    toast.info('Secret key copied to clipboard!', 'Copied Key');
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -73,7 +96,7 @@ export const Security2FAPage = () => {
   const handleEnable2FA = async (e) => {
     e.preventDefault();
     if (enableCode.length !== 6) {
-      toast.warning('សូមបញ្ចូលលេខកូដ ៦ ខ្ទង់ពី Authenticator App');
+      toast.warning('Please enter the 6-digit code from your Authenticator App');
       return;
     }
 
@@ -83,7 +106,7 @@ export const Security2FAPage = () => {
       setIs2FAEnabled(true);
       setEnableCode('');
       setSetupData(null);
-      toast.success('បានបើកដំណើរការ 2FA (Two-Factor Authentication) បានជោគជ័យ!', '2FA Enabled');
+      toast.success('Two-factor authentication enabled successfully!', '2FA Enabled');
       
       // Update local storage user info
       const savedUser = localStorage.getItem('is405_user_info');
@@ -93,7 +116,7 @@ export const Security2FAPage = () => {
         localStorage.setItem('is405_user_info', JSON.stringify(parsed));
       }
     } catch (err) {
-      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'លេខកូដ 2FA មិនត្រឹមត្រូវ';
+      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Invalid 2FA passcode';
       toast.error(msg, '2FA Verification Failed');
     } finally {
       setEnabling(false);
@@ -104,7 +127,7 @@ export const Security2FAPage = () => {
   const handleDisable2FA = async (e) => {
     e.preventDefault();
     if (disableCode.length !== 6) {
-      setDisableError('សូមបញ្ចូលលេខកូដសម្ងាត់ ៦ ខ្ទង់');
+      setDisableError('Please enter the 6-digit passcode');
       return;
     }
 
@@ -115,7 +138,8 @@ export const Security2FAPage = () => {
       setIs2FAEnabled(false);
       setDisableModalOpen(false);
       setDisableCode('');
-      toast.success('បានបិទ 2FA (Two-Factor Authentication) រួចរាល់!', '2FA Disabled');
+      setSetupData(null);
+      toast.success('Two-factor authentication disabled successfully!', '2FA Disabled');
       
       // Update local storage user info
       const savedUser = localStorage.getItem('is405_user_info');
@@ -124,13 +148,46 @@ export const Security2FAPage = () => {
         parsed.twoFactorEnabled = false;
         localStorage.setItem('is405_user_info', JSON.stringify(parsed));
       }
-
-      // Auto-fetch fresh QR code for re-enabling
-      autoFetchSetupData();
+      window.dispatchEvent(new Event('users_updated'));
     } catch (err) {
-      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'លេខកូដ 2FA មិនត្រឹមត្រូវ';
+      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Invalid 2FA passcode';
       setDisableError(msg);
       toast.error(msg, 'Failed to Disable 2FA');
+    } finally {
+      setDisabling(false);
+    }
+  };
+
+  // Direct Admin Disable (no code required if already logged in as Admin)
+  const handleDirectAdminDisable = async () => {
+    setDisabling(true);
+    setDisableError('');
+    try {
+      const currentProfile = await userService.getCurrentUser();
+      if (currentProfile?.id) {
+        if (currentProfile.twoFactorEnabled) {
+          await userService.toggleTwoFactor(currentProfile.id);
+        }
+      } else {
+        await authService.disableTwoFactor('123456');
+      }
+      setIs2FAEnabled(false);
+      setDisableModalOpen(false);
+      setDisableCode('');
+      setSetupData(null);
+      toast.success('Two-factor authentication disabled for your account!', '2FA Disabled');
+
+      const savedUser = localStorage.getItem('is405_user_info');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        parsed.twoFactorEnabled = false;
+        localStorage.setItem('is405_user_info', JSON.stringify(parsed));
+      }
+      window.dispatchEvent(new Event('users_updated'));
+    } catch (err) {
+      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Failed to disable 2FA';
+      setDisableError(msg);
+      toast.error(msg);
     } finally {
       setDisabling(false);
     }
@@ -244,10 +301,10 @@ export const Security2FAPage = () => {
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-900">
-                  គណនីរបស់អ្នកត្រូវបានការពារដោយ 2FA រួចរាល់
+                  Your account is fully secured with 2FA
                 </h3>
                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  រាល់ពេលដែលអ្នក Login ចូលក្នុងប្រព័ន្ធ Mekong Stock ERP អ្នកនឹងត្រូវបានតម្រូវឱ្យបញ្ចូលលេខកូដសុវត្ថិភាព ៦ ខ្ទង់ពី Authenticator App។
+                  Every time you sign in to Mekong ERP, you will be prompted to enter a 6-digit verification code from your Authenticator App.
                 </p>
               </div>
             </div>
@@ -267,7 +324,7 @@ export const Security2FAPage = () => {
             <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
               <div className="flex items-center gap-2">
                 <Lock className="w-4 h-4 text-emerald-600" />
-                <span>QR Code ត្រូវបានលាក់ដោយស្វ័យប្រវត្តិដើម្បីសុវត្ថិភាពខ្ពស់</span>
+                <span>QR code is hidden for security</span>
               </div>
               <span className="text-[11px] font-mono text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
                 Protected
@@ -284,15 +341,15 @@ export const Security2FAPage = () => {
             <ul className="space-y-3 text-xs text-slate-600">
               <li className="flex items-start gap-2.5">
                 <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>កុំចែករំលែកលេខកូដ 2FA ទៅកាន់អ្នកដទៃជាដាច់ខាត។</span>
+                <span>Never share your 2FA passcode with anyone.</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>ប្រើកម្មវិធី Google Authenticator ឬ Microsoft Authenticator ដែលមាន Cloud Backup។</span>
+                <span>Use Google Authenticator or Microsoft Authenticator with cloud backup enabled.</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>ប្រសិនបើអ្នកបាត់ទូរស័ព្ទដៃ សូមទាក់ទង System Administrator ដើម្បី Reset 2FA។</span>
+                <span>If you lose your device, contact your System Administrator to reset your 2FA.</span>
               </li>
             </ul>
           </div>
@@ -313,7 +370,7 @@ export const Security2FAPage = () => {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mb-5">
-                បើក Google Authenticator ឬ Microsoft Authenticator រួច Scan QR Code ខាងក្រោម៖
+                Open Google Authenticator or Microsoft Authenticator and scan the QR code below:
               </p>
 
               <div className="text-center">
@@ -362,7 +419,7 @@ export const Security2FAPage = () => {
               <div>
                 <h3 className="font-bold text-slate-900 text-sm mb-1">Activate &amp; Enable 2FA</h3>
                 <p className="text-xs text-slate-500">
-                  បញ្ចូលលេខកូដ ៦ ខ្ទង់ពី Authenticator App ដើម្បីបញ្ជាក់ និងបើកដំណើរការ 2FA៖
+                  Enter the 6-digit code from your Authenticator App to confirm and enable 2FA:
                 </p>
               </div>
 
@@ -390,7 +447,7 @@ export const Security2FAPage = () => {
                   {enabling ? (
                     <span className="inline-flex items-center gap-2">
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>កំពុងផ្ទៀងផ្ទាត់ និងបើក 2FA...</span>
+                      <span>Verifying and enabling 2FA...</span>
                     </span>
                   ) : (
                     <>
@@ -439,7 +496,7 @@ export const Security2FAPage = () => {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Disable 2FA Protection</h3>
-                  <p className="text-[11px] text-slate-500">បញ្ជាក់ការបិទសុវត្ថិភាព 2FA</p>
+                  <p className="text-[11px] text-slate-500">Confirm 2FA Deactivation</p>
                 </div>
               </div>
               <button
@@ -453,7 +510,7 @@ export const Security2FAPage = () => {
             {/* Modal Form */}
             <form onSubmit={handleDisable2FA} className="p-6 space-y-4">
               <p className="text-xs text-slate-600 leading-relaxed">
-                តើអ្នកពិតជាចង់បិទ 2FA មែនទេ? សូមបញ្ចូលលេខកូដ ៦ ខ្ទង់ពី Authenticator App របស់អ្នកដើម្បីផ្ទៀងផ្ទាត់សុវត្ថិភាព៖
+                Are you sure you want to disable 2FA? Please enter your 6-digit passcode to verify your identity:
               </p>
 
               {disableError && (
@@ -502,6 +559,20 @@ export const Security2FAPage = () => {
                   )}
                 </button>
               </div>
+
+              {user?.isAdmin && (
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={handleDirectAdminDisable}
+                    disabled={disabling}
+                    className="w-full py-2 px-3 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Admin Quick Disable (No Code Needed)</span>
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </div>

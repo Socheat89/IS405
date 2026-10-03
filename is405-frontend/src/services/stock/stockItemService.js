@@ -4,11 +4,13 @@ import { API_CONFIG } from '../../config/api';
 export const stockItemService = {
   /** GET /api/stock/items */
   async getItems(params = {}) {
-    const response = await apiClient.get(API_CONFIG.ENDPOINTS.STOCK.ITEMS, { params });
+    const response = await apiClient.get(API_CONFIG.ENDPOINTS.STOCK.ITEMS, { 
+      params: { isActive: true, ...params } 
+    });
     const apiItems = response?.data?.items || response?.data;
     if (!Array.isArray(apiItems)) throw new Error('Invalid response from stock items API');
 
-    let items = apiItems;
+    let items = apiItems.filter(i => i.isActive !== false);
     // Client-side filtering (backend may not support all filters)
     if (params.search) {
       const s = params.search.toLowerCase();
@@ -19,7 +21,8 @@ export const stockItemService = {
       );
     }
     if (params.status && params.status !== 'ALL') {
-      items = items.filter(i => i.status === params.status);
+      const target = params.status.replace(/_/g, '').toLowerCase();
+      items = items.filter(i => (i.status || '').replace(/_/g, '').toLowerCase() === target);
     }
     return items;
   },
@@ -58,6 +61,24 @@ export const stockItemService = {
       reason,
     });
     return response?.data || true;
+  },
+
+  /** GET /api/stock/movements?itemId=:id */
+  async getMovements(params = {}) {
+    const response = await apiClient.get('/stock/movements', { params });
+    return response?.data || [];
+  },
+
+  /** GET /api/stock/summary */
+  async getSummary() {
+    const response = await apiClient.get('/stock/summary');
+    return response?.data || {};
+  },
+
+  /** GET /api/stock/alerts */
+  async getAlerts() {
+    const response = await apiClient.get('/stock/alerts');
+    return response?.data || [];
   },
 };
 

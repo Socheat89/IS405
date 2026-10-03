@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { X, Building2, MapPin, Phone, AlertCircle } from 'lucide-react';
 
 export const WarehouseModal = ({ isOpen, onClose, warehouse, onSaveWarehouse }) => {
-  if (!isOpen) return null;
-
   const isEditing = Boolean(warehouse?.id);
   const [formData, setFormData] = useState({
     code: '',
@@ -55,6 +53,8 @@ export const WarehouseModal = ({ isOpen, onClose, warehouse, onSaveWarehouse }) 
       setSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">

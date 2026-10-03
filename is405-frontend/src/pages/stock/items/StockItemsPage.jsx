@@ -2,19 +2,22 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Package, RefreshCcw, Plus, MapPin, Tag, BarChart3, 
   AlertTriangle, DollarSign, Layers, ArrowUpDown, ChevronRight,
-  Boxes, ShieldAlert, Sparkles, Filter, Edit2, Trash2
+  Boxes, ShieldAlert, Sparkles, Filter, Edit2, Trash2, History,
+  Building2
 } from 'lucide-react';
 import { ControlPanel } from '../../../components/common/ControlPanel';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { ConfirmModal } from '../../../components/common/ConfirmModal';
 import { stockItemService as stockService } from '../../../services/stock/stockItemService';
+import { warehouseService } from '../../../services/stock/warehouseService';
 import { StockItemModal as StockModal } from './StockItemModal';
+import { ItemLedgerModal } from './ItemLedgerModal';
 import { useAuth } from '../../../context/AuthContext';
 
 import { useToast } from '../../../context/ToastContext';
 
 export const StockItemsPage = () => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const toast = useToast();
 
   const canCreate = hasPermission('stock-items.create');
@@ -23,6 +26,8 @@ export const StockItemsPage = () => {
   const canAdjust = hasPermission('stock-adjustments.create') || hasPermission('stock-items.edit');
 
   const [items, setItems] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -33,6 +38,7 @@ export const StockItemsPage = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit' | 'adjust'
   const [selectedItem, setSelectedItem] = useState(null);
+  const [ledgerItem, setLedgerItem] = useState(null);
 
   // Delete Confirm State
   const [deleteConfirm, setDeleteConfirm] = useState({
@@ -40,12 +46,41 @@ export const StockItemsPage = () => {
     item: null,
   });
 
-  const fetchItems = async () => {
+  // Load accessible warehouses and determine the user's Main/Default warehouse
+  useEffect(() => {
+    let isMounted = true;
+    const loadWarehouses = async () => {
+      try {
+        const whList = await warehouseService.getWarehouses(true);
+        if (!isMounted) return;
+
+        const enriched = whList.map(w => {
+          const isUserDef = user?.assignedWarehouses?.find(uw => uw.id === w.id)?.isDefault 
+            || user?.defaultWarehouseId === w.id 
+            || w.code === 'WH-MAIN';
+          return { ...w, isDefault: Boolean(isUserDef) };
+        });
+
+        setWarehouses(enriched);
+        const defWh = enriched.find(w => w.isDefault) || enriched[0];
+        if (defWh && !selectedWarehouseId) {
+          setSelectedWarehouseId(defWh.id);
+        }
+      } catch (err) {
+        console.warn('Could not load warehouses:', err);
+      }
+    };
+    loadWarehouses();
+    return () => { isMounted = false; };
+  }, [user]);
+
+  const fetchItems = async (whId = selectedWarehouseId) => {
     setLoading(true);
     try {
       const data = await stockService.getItems({
         search: searchQuery,
-        status: statusFilter
+        status: statusFilter,
+        warehouseId: whId || undefined
       });
       setItems(data);
     } catch (err) {
@@ -56,8 +91,8 @@ export const StockItemsPage = () => {
   };
 
   useEffect(() => {
-    fetchItems();
-  }, [searchQuery, statusFilter]);
+    fetchItems(selectedWarehouseId);
+  }, [searchQuery, statusFilter, selectedWarehouseId]);
 
   // Derived Metrics & Categories
   const categories = useMemo(() => {
@@ -74,9 +109,16 @@ export const StockItemsPage = () => {
     const totalItems = items.length;
     const totalQty = items.reduce((acc, i) => acc + (i.quantityOnHand || 0), 0);
     const totalValuation = items.reduce((acc, i) => acc + ((i.quantityOnHand || 0) * (i.unitPrice || 0)), 0);
-    const lowStockCount = items.filter(i => i.status === 'LOW_STOCK' || i.quantityOnHand <= (i.reorderLevel || 5)).length;
+    const lowStockCount = items.filter(i => {
+      const s = (i.status || '').toUpperCase().replace(/_/g, '');
+      return s === 'LOWSTOCK' || (i.quantityOnHand || 0) <= (i.minStockLevel || i.reorderLevel || 5);
+    }).length;
     return { totalItems, totalQty, totalValuation, lowStockCount };
   }, [items]);
+
+  const activeWarehouse = useMemo(() => {
+    return warehouses.find(w => w.id === selectedWarehouseId) || warehouses.find(w => w.isDefault) || warehouses[0] || null;
+  }, [warehouses, selectedWarehouseId]);
 
   const handleCreateNew = () => {
     if (!canCreate) return;
@@ -109,34 +151,41 @@ export const StockItemsPage = () => {
 
   const handleConfirmDelete = async () => {
     if (!deleteConfirm.item || !canDelete) return;
+    const deletedId = deleteConfirm.item.id;
+    const deletedName = deleteConfirm.item.name;
     try {
-      await stockService.deleteItem(deleteConfirm.item.id);
-      toast.success(`បានលុបទំនិញ '${deleteConfirm.item.name}' ចេញពីស្តុកជោគជ័យ!`);
+      await stockService.deleteItem(deletedId);
+      setItems(prev => prev.filter(i => i.id !== deletedId));
+      toast.success(`Deleted item '${deletedName}' from stock successfully!`);
       setDeleteConfirm({ isOpen: false, item: null });
       await fetchItems();
     } catch (err) {
-      toast.error('បរាជ័យក្នុងការលុបទំនិញ');
+      toast.error('Failed to delete item');
     }
   };
 
-  const handleSaveItem = async (itemData) => {
+  const handleSaveItem = async (arg1, arg2, arg3) => {
     try {
-      if (modalMode === 'edit' && selectedItem) {
-        if (!canEdit) return;
-        await stockService.updateItem(selectedItem.id, itemData);
-        toast.success(`បានកែប្រែព័ត៌មានទំនិញ '${itemData.name}' ជោគជ័យ!`);
-      } else if (modalMode === 'adjust' && selectedItem) {
+      if (modalMode === 'adjust' && selectedItem) {
         if (!canAdjust) return;
+        const adjQty = typeof arg2 === 'number' ? arg2 : 0;
+        const reason = arg3 || 'Inventory Adjustment';
+        await stockService.adjustStock(selectedItem.id, adjQty, reason);
+        toast.success(`Adjusted stock for '${selectedItem.name}' successfully!`);
+      } else if (modalMode === 'edit' && selectedItem) {
+        if (!canEdit) return;
+        const itemData = typeof arg1 === 'object' ? arg1 : selectedItem;
         await stockService.updateItem(selectedItem.id, itemData);
-        toast.success(`បានកែតម្រូវចំនួនស្តុក '${itemData.name}' ជោគជ័យ!`);
+        toast.success(`Updated item '${itemData.name || selectedItem.name}' successfully!`);
       } else {
         if (!canCreate) return;
+        const itemData = typeof arg1 === 'object' ? arg1 : {};
         await stockService.createItem(itemData);
-        toast.success(`បានបង្កើតទំនិញថ្មី '${itemData.name}' ចូលក្នុងស្តុកជោគជ័យ!`);
+        toast.success(`Created new item '${itemData.name}' in stock successfully!`);
       }
       await fetchItems();
     } catch (err) {
-      toast.error(err?.response?.data?.message || err?.message || 'បរាជ័យក្នុងការរក្សាទុក');
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to save item');
     }
   };
 
@@ -167,6 +216,57 @@ export const StockItemsPage = () => {
       />
 
       <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6">
+        {/* Active Warehouse Indicator & Selector */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 px-5 rounded-2xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-sky-50 text-[#2089C8] border border-sky-100 flex items-center justify-center shrink-0">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800">
+                  {activeWarehouse ? `${activeWarehouse.name} (${activeWarehouse.code})` : 'Main Warehouse'}
+                </span>
+                {activeWarehouse?.isDefault ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                    ★ Main Warehouse (Default)
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                    Regional Branch
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 font-medium">
+                Real-time On-Hand stock quantities for this facility.
+              </p>
+            </div>
+          </div>
+
+          {warehouses.length > 1 && (
+            <div className="flex items-center gap-2">
+              <label htmlFor="warehouse-filter-select" className="text-xs font-semibold text-slate-500 whitespace-nowrap">
+                Warehouse:
+              </label>
+              <select
+                id="warehouse-filter-select"
+                value={selectedWarehouseId || ''}
+                onChange={(e) => {
+                  const val = e.target.value ? Number(e.target.value) : null;
+                  setSelectedWarehouseId(val);
+                }}
+                className="px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2089C8]/20 focus:border-[#2089C8] cursor-pointer"
+              >
+                {warehouses.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} {w.isDefault ? '★ (Main Warehouse)' : `(${w.code})`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+
         {/* KPI Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="erp-card p-4.5 relative overflow-hidden flex items-center justify-between border-l-4 border-l-[#2089C8] bg-white">
@@ -313,42 +413,49 @@ export const StockItemsPage = () => {
                       <td className="py-3.5 px-4">
                         <StatusBadge status={item.status} />
                       </td>
-                      {(canEdit || canDelete || canAdjust) && (
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {canAdjust && (
-                              <button
-                                onClick={() => handleOpenAdjust(item)}
-                                className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-[#1976ab] border border-sky-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                title="Adjust Stock Quantity"
-                              >
-                                <RefreshCcw className="w-3 h-3" />
-                                <span>Adjust</span>
-                              </button>
-                            )}
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setLedgerItem(item)}
+                            className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                            title="View Stock Ledger & History"
+                          >
+                            <History className="w-3 h-3 text-[#2089C8]" />
+                            <span>Ledger</span>
+                          </button>
 
-                            {canEdit && (
-                              <button
-                                onClick={() => handleOpenEdit(item)}
-                                className="p-1.5 text-slate-500 hover:text-[#2089C8] hover:bg-sky-50 rounded-lg border border-slate-200 hover:border-sky-300 transition-colors cursor-pointer"
-                                title="Edit Item"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                          {canAdjust && (
+                            <button
+                              onClick={() => handleOpenAdjust(item)}
+                              className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-[#1976ab] border border-sky-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                              title="Adjust Stock Quantity"
+                            >
+                              <RefreshCcw className="w-3 h-3" />
+                              <span>Adjust</span>
+                            </button>
+                          )}
 
-                            {canDelete && (
-                              <button
-                                onClick={() => handleDeleteItem(item)}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 hover:border-rose-300 transition-colors cursor-pointer"
-                                title="Delete Item"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
+                          {canEdit && (
+                            <button
+                              onClick={() => handleOpenEdit(item)}
+                              className="p-1.5 text-slate-500 hover:text-[#2089C8] hover:bg-sky-50 rounded-lg border border-slate-200 hover:border-sky-300 transition-colors cursor-pointer"
+                              title="Edit Item"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDeleteItem(item)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 hover:border-rose-300 transition-colors cursor-pointer"
+                              title="Delete Item"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -386,38 +493,43 @@ export const StockItemsPage = () => {
                   </div>
                 </div>
 
-                {(canEdit || canDelete || canAdjust) && (
-                  <div className="mt-4 pt-3.5 border-t border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      {canEdit && (
-                        <button
-                          onClick={() => handleOpenEdit(item)}
-                          className="px-2.5 py-1 text-slate-600 hover:text-[#2089C8] bg-white hover:bg-sky-50 border border-slate-200 hover:border-sky-300 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" /> Edit
-                        </button>
-                      )}
-                      {canDelete && (
-                        <button
-                          onClick={() => handleDeleteItem(item)}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-300 rounded-lg transition-colors cursor-pointer"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    {canAdjust && (
+                <div className="mt-4 pt-3.5 border-t border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setLedgerItem(item)}
+                      className="px-2.5 py-1 text-slate-700 hover:text-[#2089C8] bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                      title="View Ledger"
+                    >
+                      <History className="w-3.5 h-3.5 text-[#2089C8]" /> Ledger
+                    </button>
+                    {canEdit && (
                       <button
-                        onClick={() => handleOpenAdjust(item)}
-                        className="px-3 py-1 bg-sky-50 hover:bg-sky-100 text-[#1976ab] border border-sky-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        onClick={() => handleOpenEdit(item)}
+                        className="px-2.5 py-1 text-slate-600 hover:text-[#2089C8] bg-white hover:bg-sky-50 border border-slate-200 hover:border-sky-300 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
                       >
-                        <RefreshCcw className="w-3.5 h-3.5" /> Adjust Qty
+                        <Edit2 className="w-3.5 h-3.5" /> Edit
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button
+                        onClick={() => handleDeleteItem(item)}
+                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 hover:border-rose-300 rounded-lg transition-colors cursor-pointer"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
-                )}
+
+                  {canAdjust && (
+                    <button
+                      onClick={() => handleOpenAdjust(item)}
+                      className="px-3 py-1 bg-sky-50 hover:bg-sky-100 text-[#1976ab] border border-sky-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <RefreshCcw className="w-3.5 h-3.5" /> Adjust Qty
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -430,6 +542,12 @@ export const StockItemsPage = () => {
         onSave={handleSaveItem}
         initialItem={selectedItem}
         mode={modalMode}
+      />
+
+      <ItemLedgerModal
+        isOpen={!!ledgerItem}
+        onClose={() => setLedgerItem(null)}
+        item={ledgerItem}
       />
 
       <ConfirmModal

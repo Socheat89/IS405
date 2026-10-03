@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShoppingBag, CheckCircle2, Clock, Trash2, Edit2, Plus, 
-  DollarSign, Truck, AlertTriangle, ArrowUpRight, Check, XCircle, FileCheck2, Filter
+  DollarSign, Truck, AlertTriangle, ArrowUpRight, Check, XCircle, FileCheck2, Filter, Printer
 } from 'lucide-react';
 import { ControlPanel } from '../../../components/common/ControlPanel';
 import { ConfirmModal } from '../../../components/common/ConfirmModal';
+import { InvoiceModal } from '../../../components/common/InvoiceModal';
 import { purchaseService } from '../../../services/po/purchaseService';
 import { PurchaseOrderModal as PurchaseModal } from './PurchaseOrderModal';
 import { GrnModal } from './GrnModal';
+import { PoApprovalModal } from './PoApprovalModal';
 import { useAuth } from '../../../context/AuthContext';
 
 export const PurchaseOrdersPage = () => {
@@ -30,15 +32,35 @@ export const PurchaseOrdersPage = () => {
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
   const [selectedPO, setSelectedPO] = useState(null);
 
+  // Approval Modal State
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvalPO, setApprovalPO] = useState(null);
+
   // GRN Goods Receipt Modal State
   const [grnModalOpen, setGrnModalOpen] = useState(false);
   const [grnPO, setGrnPO] = useState(null);
+
+  // Print PO Voucher State
+  const [printInvoicePO, setPrintInvoicePO] = useState(null);
 
   // Delete Confirm State
   const [deleteConfirm, setDeleteConfirm] = useState({
     isOpen: false,
     po: null,
   });
+
+  const handlePrintPO = async (po) => {
+    try {
+      if (!po.items || po.items.length === 0) {
+        const full = await purchaseService.getPurchaseOrder(po.id);
+        setPrintInvoicePO(full || po);
+      } else {
+        setPrintInvoicePO(po);
+      }
+    } catch {
+      setPrintInvoicePO(po);
+    }
+  };
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -64,9 +86,19 @@ export const PurchaseOrdersPage = () => {
     setModalOpen(true);
   };
 
-  const handleEditPO = (po) => {
+  const handleEditPO = async (po) => {
     if (!canEdit) return;
-    setSelectedPO(po);
+    try {
+      if (!po.items || po.items.length === 0) {
+        const fullPO = await purchaseService.getOrder(po.id);
+        setSelectedPO(fullPO || po);
+      } else {
+        setSelectedPO(po);
+      }
+    } catch (err) {
+      console.warn('Could not fetch full PO, using summary:', err);
+      setSelectedPO(po);
+    }
     setModalMode('edit');
     setModalOpen(true);
   };
@@ -82,9 +114,15 @@ export const PurchaseOrdersPage = () => {
     await fetchOrders();
   };
 
-  const handleApprove = async (poId) => {
+  const handleApproveClick = (po) => {
     if (!canApprove) return;
-    await purchaseService.approveOrder(poId);
+    setApprovalPO(po);
+    setApprovalModalOpen(true);
+  };
+
+  const handleSaveApproval = async (poId, approvalData) => {
+    if (!canApprove) return;
+    await purchaseService.approveOrder(poId, approvalData);
     await fetchOrders();
   };
 
@@ -305,12 +343,12 @@ export const PurchaseOrdersPage = () => {
                             {canApprove && (po.status === 'PENDING_APPROVAL' || po.status === 'DRAFT') && (
                               <>
                                 <button
-                                  onClick={() => handleApprove(po.id)}
-                                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                  title="Approve Purchase Order"
+                                  onClick={() => handleApproveClick(po)}
+                                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                  title="Review and Approve with Selling Price Setup"
                                 >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Approve</span>
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Approve & Price</span>
                                 </button>
                                 <button
                                   onClick={() => handleReject(po.id)}
@@ -344,6 +382,15 @@ export const PurchaseOrdersPage = () => {
                                 <Edit2 className="w-3.5 h-3.5" />
                               </button>
                             )}
+
+                            {/* View & Print PO Slip Button */}
+                            <button
+                              onClick={() => handlePrintPO(po)}
+                              className="p-1.5 text-slate-500 hover:text-sky-700 hover:bg-sky-50 border border-transparent hover:border-sky-200 rounded-lg transition-colors cursor-pointer"
+                              title="View & Print PO Voucher"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-[#2089C8]" />
+                            </button>
 
                             {canDelete && (
                               <button
@@ -389,6 +436,14 @@ export const PurchaseOrdersPage = () => {
                 {(canApprove || canReceive || canEdit || canDelete) && (
                   <div className="mt-4 pt-3.5 border-t border-slate-100 flex items-center justify-between">
                     <div className="flex items-center gap-1">
+                      {canApprove && (po.status === 'PENDING_APPROVAL' || po.status === 'DRAFT') && (
+                        <button
+                          onClick={() => handleApproveClick(po)}
+                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Check className="w-3.5 h-3.5 text-emerald-600" /> Approve & Price
+                        </button>
+                      )}
                       {canEdit && (
                         <button
                           onClick={() => handleEditPO(po)}
@@ -397,6 +452,14 @@ export const PurchaseOrdersPage = () => {
                           <Edit2 className="w-3.5 h-3.5" /> Edit
                         </button>
                       )}
+                      <button
+                        onClick={() => handlePrintPO(po)}
+                        className="p-1 text-slate-500 hover:text-sky-700 hover:bg-sky-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                        title="Print PO Voucher"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-[#2089C8]" />
+                      </button>
+
                       {canDelete && (
                         <button
                           onClick={() => handleDeletePO(po)}
@@ -430,6 +493,24 @@ export const PurchaseOrdersPage = () => {
         onSave={handleSavePO}
         initialPO={selectedPO}
         mode={modalMode}
+      />
+
+      {/* Official Printable PO Voucher Modal */}
+      <InvoiceModal
+        isOpen={Boolean(printInvoicePO)}
+        onClose={() => setPrintInvoicePO(null)}
+        type="PURCHASE_ORDER"
+        data={printInvoicePO}
+      />
+
+      <PoApprovalModal
+        isOpen={approvalModalOpen}
+        onClose={() => {
+          setApprovalModalOpen(false);
+          setApprovalPO(null);
+        }}
+        po={approvalPO}
+        onApprove={handleSaveApproval}
       />
 
       <GrnModal

@@ -602,19 +602,16 @@ public class AppDbContext : DbContext
                   .OnDelete(DeleteBehavior.Restrict);
         });
 
-        // Oracle compatibility for boolean types
-        if (Database.ProviderName?.Contains("Oracle", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            var boolConverter = new Microsoft.EntityFrameworkCore.Storage.ValueConversion.BoolToZeroOneConverter<int>();
+        // Universal boolean converter (compatible with Oracle NUMBER(1), SQLite INTEGER, and Postgres)
+        var boolConverter = new Microsoft.EntityFrameworkCore.Storage.ValueConversion.BoolToZeroOneConverter<int>();
 
-            foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            foreach (var property in entityType.GetProperties())
             {
-                foreach (var property in entityType.GetProperties())
+                if (property.ClrType == typeof(bool) || property.ClrType == typeof(bool?))
                 {
-                    if (property.ClrType == typeof(bool) || property.ClrType == typeof(bool?))
-                    {
-                        property.SetValueConverter(boolConverter);
-                    }
+                    property.SetValueConverter(boolConverter);
                 }
             }
         }

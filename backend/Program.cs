@@ -29,26 +29,28 @@ if (!string.IsNullOrEmpty(renderPort))
 
 // 1. Database Configuration
 var dbProvider = builder.Configuration["DatabaseProvider"] 
-              ?? Environment.GetEnvironmentVariable("DATABASE_PROVIDER") 
-              ?? "Sqlite";
+              ?? Environment.GetEnvironmentVariable("DATABASE_PROVIDER");
 
-var postgresConn = builder.Configuration.GetConnectionString("PostgreSqlConnection")
-                ?? builder.Configuration.GetConnectionString("SupabaseConnection")
-                ?? Environment.GetEnvironmentVariable("DATABASE_URL")
-                ?? Environment.GetEnvironmentVariable("SUPABASE_DB_URL");
-
-if (!string.IsNullOrWhiteSpace(postgresConn))
-{
-    var formattedConn = ConvertPostgresUriToConnectionString(postgresConn);
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseNpgsql(formattedConn));
-}
-else if (string.Equals(dbProvider, "Oracle", StringComparison.OrdinalIgnoreCase))
+if (string.Equals(dbProvider, "Oracle", StringComparison.OrdinalIgnoreCase))
 {
     var oracleConnection = builder.Configuration.GetConnectionString("OracleConnection")
+        ?? Environment.GetEnvironmentVariable("ORACLE_CONNECTION")
         ?? throw new InvalidOperationException("OracleConnection string is not configured.");
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseOracle(oracleConnection));
+}
+else if (string.Equals(dbProvider, "PostgreSql", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(dbProvider, "Postgres", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(dbProvider, "Supabase", StringComparison.OrdinalIgnoreCase))
+{
+    var postgresConn = builder.Configuration.GetConnectionString("PostgreSqlConnection")
+                    ?? builder.Configuration.GetConnectionString("SupabaseConnection")
+                    ?? Environment.GetEnvironmentVariable("DATABASE_URL")
+                    ?? Environment.GetEnvironmentVariable("SUPABASE_DB_URL")
+                    ?? throw new InvalidOperationException("PostgreSQL/Supabase connection string is not configured.");
+    var formattedConn = ConvertPostgresUriToConnectionString(postgresConn);
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseNpgsql(formattedConn));
 }
 else
 {
@@ -202,13 +204,17 @@ using (var scope = app.Services.CreateScope())
             await DbSeeder.SeedAsync(db);
 
             if (string.Equals(provider, "Oracle", StringComparison.OrdinalIgnoreCase) ||
-                !string.IsNullOrWhiteSpace(postgresConn) ||
                 string.Equals(provider, "PostgreSql", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(provider, "Postgres", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(provider, "Supabase", StringComparison.OrdinalIgnoreCase))
             {
                 var sqliteConn = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=is405.db";
                 await DataMigrator.TransferFromSqliteAsync(sqliteConn, db);
+            }
+
+            if (db.Database.ProviderName?.Contains("Oracle", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                await DataMigrator.SyncOracleSequencesAsync(db);
             }
 
             initialized = true;
@@ -322,6 +328,8 @@ app.Use(async (context, next) =>
 });
 
 app.UseAuthorization();
+
+app.MapGet("/healthz", () => Results.Ok(new { status = "Healthy", timestamp = DateTimeOffset.UtcNow }));
 
 app.MapControllers();
 

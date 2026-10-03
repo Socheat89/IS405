@@ -58,6 +58,12 @@ export const userService = {
     return data.map(enrichUser);
   },
 
+  /** GET /api/users/me — returns current logged-in user profile */
+  async getCurrentUser() {
+    const response = await apiClient.get(API_CONFIG.ENDPOINTS.USERS.ME);
+    return enrichUser(response.data);
+  },
+
   /** POST /api/users */
   async createUser(userData) {
     const roleIds = (userData.roleIds || []).map(Number);
@@ -111,6 +117,13 @@ export const userService = {
   async toggleUserStatus(userId) {
     const response = await apiClient.put(API_CONFIG.ENDPOINTS.USERS.STATUS(userId));
     if (!response?.data) throw new Error('Failed to toggle user status');
+    return enrichUser(response.data);
+  },
+
+  /** PUT /api/users/:id/2fa — toggle two factor authentication */
+  async toggleTwoFactor(userId) {
+    const response = await apiClient.put(API_CONFIG.ENDPOINTS.USERS.TOGGLE_2FA(userId));
+    if (!response?.data) throw new Error('Failed to toggle 2FA status');
     return enrichUser(response.data);
   },
 

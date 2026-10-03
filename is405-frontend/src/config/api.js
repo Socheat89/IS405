@@ -2,10 +2,7 @@
 // Each microservice can be configured independently via environment variables or default local paths
 
 function getBaseUrl() {
-  let url = import.meta.env.VITE_API_BASE_URL;
-  if (!url) {
-    url = import.meta.env.DEV ? '/api' : 'https://is405-backend.onrender.com/api';
-  }
+  let url = import.meta.env.VITE_API_BASE_URL || '/api';
   url = url.trim().replace(/\/+$/, '');
   if (!url.endsWith('/api')) {
     url = `${url}/api`;
@@ -41,9 +38,11 @@ export const API_CONFIG = {
     // User Access Control Microservice
     USERS: {
       BASE: '/users',
+      ME: '/users/me',
       USER_BY_ID: (id) => `/users/${id}`,
       ROLES: (id) => `/users/${id}/roles`,
       STATUS: (id) => `/users/${id}/status`,
+      TOGGLE_2FA: (id) => `/users/${id}/2fa`,
       RESEND_INVITATION: (id) => `/users/${id}/resend-invitation`,
     },
     // Roles & Permissions Microservice

@@ -164,8 +164,8 @@ export const AuthProvider = ({ children }) => {
       logout();
     };
 
-    // Poll every 2 seconds for real-time updates
-    const intervalId = setInterval(refreshPermissions, 2000);
+    // Background refresh every 30s (event-based sync handles immediate user/role changes)
+    const intervalId = setInterval(refreshPermissions, 30000);
 
     // Also sync on: window focus, cross-tab storage changes, explicit events
     window.addEventListener('focus',               refreshPermissions);
@@ -207,7 +207,11 @@ export const AuthProvider = ({ children }) => {
         return { requiresTwoFactor: true, requiresSetup: pendingData.requiresSetup };
       }
 
-      completeAuthentication(response.accessToken, { username, email: `${username}@company.com` });
+      completeAuthentication(response.accessToken, { 
+        username, 
+        email: `${username}@company.com`,
+        twoFactorEnabled: false
+      });
       return { requiresTwoFactor: false };
     } catch (err) {
       const msg = typeof err === 'string' ? err : err?.message || 'Login failed';

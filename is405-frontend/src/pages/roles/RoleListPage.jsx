@@ -402,7 +402,7 @@ export const RoleListPage = () => {
     if (!canEdit) return;
     await withErrorHandling(async () => {
       await roleService.updateRole(roleId, updatedData);
-      toast.success('បានរក្សាទុកសិទ្ធិ (Permissions) របស់ Role បានជោគជ័យ!');
+      toast.success('Role permissions saved successfully!');
       window.dispatchEvent(new Event('roles_updated'));
       window.dispatchEvent(new Event('permissions_updated'));
       await fetchRoles();
@@ -415,10 +415,10 @@ export const RoleListPage = () => {
     await withErrorHandling(async () => {
       if (roleId) {
         await roleService.updateRole(roleId, formData);
-        toast.success(`បានកែប្រែព័ត៌មាន Role '${formData.name}' បានជោគជ័យ!`);
+        toast.success(`Role '${formData.name}' updated successfully!`);
       } else {
         await roleService.createRole(formData);
-        toast.success(`បានបង្កើត Role ថ្មី '${formData.name}' បានជោគជ័យ!`);
+        toast.success(`New role '${formData.name}' created successfully!`);
       }
       window.dispatchEvent(new Event('roles_updated'));
       window.dispatchEvent(new Event('permissions_updated'));
@@ -430,10 +430,10 @@ export const RoleListPage = () => {
     if (!canDelete) return;
     try {
       await roleService.deleteRole(roleId);
-      toast.success('បានលុប Role ចេញពីប្រព័ន្ធរួចរាល់!');
+      toast.success('Role deleted successfully!');
     } catch (err) {
       console.warn('Delete role failed:', err?.message);
-      toast.error('មិនអាចលុប Role នេះបានទេ!');
+      toast.error('Failed to delete this role!');
     }
     window.dispatchEvent(new Event('roles_updated'));
     setDeleteConfirm(null);

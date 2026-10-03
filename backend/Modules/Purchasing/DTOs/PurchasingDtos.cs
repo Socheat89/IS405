@@ -38,7 +38,9 @@ public record PurchaseOrderItemDto(
 );
 
 public record CreatePoRequest(
-    int SupplierId,
+    int? SupplierId,
+    string? VendorName,
+    string? SupplierName,
     int? WarehouseId,
     DateTimeOffset? ExpectedDateUtc,
     string? PaymentTerms,
@@ -49,14 +51,22 @@ public record CreatePoRequest(
 );
 
 public record CreatePoItemRequest(
-    int ProductId,
+    int? ProductId,
+    string? ItemName,
+    string? ProductName,
+    string? ProductSku,
     int Quantity,
     decimal UnitCost,
+    decimal? UnitPrice,
     decimal Discount,
     decimal Tax
 );
 
 public record UpdatePoRequest(
+    int? SupplierId,
+    string? VendorName,
+    string? SupplierName,
+    int? WarehouseId,
     DateTimeOffset? ExpectedDateUtc,
     string? PaymentTerms,
     decimal Tax,
@@ -152,3 +162,14 @@ public record CreatePurchaseReturnItemRequest(
     decimal UnitCost,
     string? DefectReason
 );
+
+public record ApprovePoRequest(
+    IReadOnlyList<ApprovePoItemPriceRequest>? ItemPrices,
+    string? Notes
+);
+
+public record ApprovePoItemPriceRequest(
+    int ProductId,
+    decimal SellingPrice
+);
+

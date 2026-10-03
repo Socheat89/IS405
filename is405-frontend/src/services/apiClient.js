@@ -27,8 +27,11 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response) {
       if (error.response.status === 401) {
-        console.warn('Unauthorized access or invalid token.');
-        window.dispatchEvent(new Event('auth_unauthorized'));
+        const isAuthFlow = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/2fa');
+        if (!isAuthFlow) {
+          console.warn('Unauthorized access or invalid token.');
+          window.dispatchEvent(new Event('auth_unauthorized'));
+        }
       } else if (error.response.status === 403) {
         console.warn('Forbidden: Permissions revoked or insufficient.');
         window.dispatchEvent(new Event('permissions_updated'));

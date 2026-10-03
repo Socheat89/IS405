@@ -1,12 +1,15 @@
 // Sales Module Root — sub-module router
 import React, { useState } from 'react';
-import { Tag, RotateCcw } from 'lucide-react';
+import { Tag, RotateCcw, BarChart3 } from 'lucide-react';
 import { SalesOrdersPage } from './orders/SalesOrdersPage';
+import { SalesReturnsPage } from './returns/SalesReturnsPage';
+import { SalesReportsPage } from './reports/SalesReportsPage';
 import { useAuth } from '../../context/AuthContext';
 
 const TABS = [
   { id: 'orders',  label: 'Sales Orders',  icon: Tag,       perm: 'sales-orders.view' },
-  { id: 'returns', label: 'Sales Returns', icon: RotateCcw, perm: 'sales-returns.view' },
+  { id: 'returns', label: 'Customer Sales Returns', icon: RotateCcw, perm: 'sales-returns.view' },
+  { id: 'reports', label: 'Sales Reports & Analytics', icon: BarChart3, perm: 'sales.view' },
 ];
 
 export const SalesModule = () => {
@@ -76,13 +79,8 @@ export const SalesModule = () => {
       {/* Active Tab Content */}
       <div className="flex-1">
         {currentTab === 'orders' && <SalesOrdersPage />}
-        {currentTab === 'returns' && (
-          <div className="p-12 text-center text-slate-400">
-            <RotateCcw className="w-12 h-12 mx-auto mb-3 opacity-40" />
-            <p className="font-semibold text-slate-600">Sales Returns</p>
-            <p className="text-xs mt-1">Coming soon — customer returns & credit notes</p>
-          </div>
-        )}
+        {currentTab === 'returns' && <SalesReturnsPage />}
+        {currentTab === 'reports' && <SalesReportsPage />}
       </div>
     </div>
   );

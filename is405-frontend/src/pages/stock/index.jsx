@@ -1,11 +1,12 @@
-// Stock Module Root — Tab router for Items / Stock-In / Stock-Out / Stock Transfers / Warehouses
+// Stock Module Root — Tab router for Items / Stock-In / Stock-Out / Stock Transfers / Warehouses / Reports
 import React, { useState } from 'react';
-import { Package, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, Building2 } from 'lucide-react';
+import { Package, ArrowDownToLine, ArrowUpFromLine, ArrowRightLeft, Building2, BarChart3 } from 'lucide-react';
 import { StockItemsPage } from './items/StockItemsPage';
 import { StockInPage }    from './stock-in/StockInPage';
 import { StockOutPage }   from './stock-out/StockOutPage';
 import { StockTransfersPage } from './transfers/StockTransfersPage';
 import { WarehousesPage } from './warehouses/WarehousesPage';
+import { StockReportsPage } from './reports/StockReportsPage';
 import { useAuth } from '../../context/AuthContext';
 
 const TABS = [
@@ -14,6 +15,7 @@ const TABS = [
   { id: 'stock-out',   label: 'Stock Out (Sales)',     icon: ArrowUpFromLine,  color: 'text-rose-600',    perm: 'stock-out.view'   },
   { id: 'transfers',   label: 'Stock Transfers (Multi-WH)', icon: ArrowRightLeft, color: 'text-purple-600',  perm: 'transfers.view'   },
   { id: 'warehouses',  label: 'Warehouses',            icon: Building2,        color: 'text-amber-600',   perm: 'warehouses.view'  },
+  { id: 'reports',     label: 'Inventory Valuation & Reports', icon: BarChart3, color: 'text-[#2089C8]', perm: 'stock.view'       },
 ];
 
 export const StockModule = ({ onNavigateApp }) => {
@@ -87,6 +89,7 @@ export const StockModule = ({ onNavigateApp }) => {
         {currentTab === 'stock-out'  && <StockOutPage onNavigateToSales={() => onNavigateApp && onNavigateApp('sales')} />}
         {currentTab === 'transfers'  && <StockTransfersPage />}
         {currentTab === 'warehouses' && <WarehousesPage />}
+        {currentTab === 'reports'    && <StockReportsPage />}
       </div>
     </div>
   );

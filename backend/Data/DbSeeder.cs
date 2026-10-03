@@ -1327,25 +1327,29 @@ public static class DbSeeder
                 await context.SaveChangesAsync();
             }
 
-            // Ensure UserWarehouses initialized for existing seeded users
-            if (!await context.UserWarehouses.AnyAsync())
-            {
-                var allWhs = await context.Warehouses.ToListAsync();
-                var allUsers = await context.Users.ToListAsync();
-                var mainWhObj = allWhs.FirstOrDefault(w => w.Code == "WH-MAIN") ?? allWhs.FirstOrDefault();
+            // Ensure all users have UserWarehouses initialized
+            var allWhs = await context.Warehouses.ToListAsync();
+            var allUsers = await context.Users.ToListAsync();
+            var mainWhObj = allWhs.FirstOrDefault(w => w.Code == "WH-MAIN") ?? allWhs.FirstOrDefault();
 
+            if (allWhs.Count > 0)
+            {
                 foreach (var u in allUsers)
                 {
-                    foreach (var wh in allWhs)
+                    var hasUws = await context.UserWarehouses.AnyAsync(uw => uw.UserId == u.Id);
+                    if (!hasUws)
                     {
-                        context.UserWarehouses.Add(new AppUserWarehouse
+                        foreach (var wh in allWhs)
                         {
-                            UserId = u.Id,
-                            WarehouseId = wh.Id,
-                            IsDefault = (mainWhObj != null && wh.Id == mainWhObj.Id),
-                            AssignedAtUtc = DateTimeOffset.UtcNow,
-                            AssignedBy = 1
-                        });
+                            context.UserWarehouses.Add(new AppUserWarehouse
+                            {
+                                UserId = u.Id,
+                                WarehouseId = wh.Id,
+                                IsDefault = (mainWhObj != null && wh.Id == mainWhObj.Id),
+                                AssignedAtUtc = DateTimeOffset.UtcNow,
+                                AssignedBy = 1
+                            });
+                        }
                     }
                 }
                 await context.SaveChangesAsync();

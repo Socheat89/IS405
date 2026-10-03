@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { X, Package, Plus, Minus, RefreshCcw, Barcode, DollarSign, Layers, MapPin, AlertCircle, Sparkles, Edit2 } from 'lucide-react';
 
 export const StockItemModal = ({ isOpen, onClose, onSave, mode = 'create', initialItem = null }) => {
-  if (!isOpen) return null;
-
   const [formData, setFormData] = useState({
     sku: initialItem?.sku || '',
     name: initialItem?.name || '',
@@ -30,7 +28,7 @@ export const StockItemModal = ({ isOpen, onClose, onSave, mode = 'create', initi
         categoryName: initialItem.categoryName || 'Electronics',
         quantityOnHand: initialItem.quantityOnHand !== undefined ? initialItem.quantityOnHand : 10,
         reorderLevel: initialItem.reorderLevel !== undefined ? initialItem.reorderLevel : 5,
-        unitPrice: initialItem.unitPrice !== undefined ? initialItem.unitPrice : 99.00,
+        unitPrice: initialItem.unitPrice ?? initialItem.sellingPrice ?? initialItem.costPrice ?? 99.00,
         location: initialItem.location || 'Warehouse Main (A1)',
         barcode: initialItem.barcode || ''
       });
@@ -82,11 +80,13 @@ export const StockItemModal = ({ isOpen, onClose, onSave, mode = 'create', initi
       }
       onClose();
     } catch (err) {
-      setError(typeof err === 'string' ? err : err?.message || 'Error processing stock update');
+      setError(err?.response?.data?.message || (typeof err === 'string' ? err : err?.message) || 'Error processing stock update');
     } finally {
       setSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -111,7 +111,7 @@ export const StockItemModal = ({ isOpen, onClose, onSave, mode = 'create', initi
                 {mode === 'adjust' 
                   ? 'Adjust Stock Quantity' 
                   : mode === 'edit' 
-                  ? `Edit Product (${initialItem?.sku})` 
+                  ? `Edit Product (${initialItem?.sku || initialItem?.name || (initialItem?.id ? '#' + initialItem.id : '')})` 
                   : 'New Product'}
               </h2>
               <p className="text-xs text-sky-100 mt-0.5">
@@ -208,8 +208,10 @@ export const StockItemModal = ({ isOpen, onClose, onSave, mode = 'create', initi
                   type="number"
                   required
                   min="1"
-                  value={adjustmentQty}
-                  onChange={(e) => setAdjustmentQty(Math.max(1, Number(e.target.value)))}
+                  value={adjustmentQty === 0 || adjustmentQty === '' ? '' : adjustmentQty}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setAdjustmentQty(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="1"
                   className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-lg font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#2089C8]/30 focus:border-[#2089C8]"
                 />
               </div>
@@ -295,8 +297,10 @@ export const StockItemModal = ({ isOpen, onClose, onSave, mode = 'create', initi
                     type="number"
                     required
                     min="0"
-                    value={formData.quantityOnHand}
-                    onChange={(e) => setFormData({ ...formData, quantityOnHand: Number(e.target.value) })}
+                    value={formData.quantityOnHand === 0 || formData.quantityOnHand === '' ? '' : formData.quantityOnHand}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setFormData({ ...formData, quantityOnHand: e.target.value === '' ? '' : Number(e.target.value) })}
+                    placeholder="0"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#2089C8]/30 focus:border-[#2089C8]"
                   />
                 </div>
@@ -309,8 +313,10 @@ export const StockItemModal = ({ isOpen, onClose, onSave, mode = 'create', initi
                     type="number"
                     required
                     min="1"
-                    value={formData.reorderLevel}
-                    onChange={(e) => setFormData({ ...formData, reorderLevel: Number(e.target.value) })}
+                    value={formData.reorderLevel === 0 || formData.reorderLevel === '' ? '' : formData.reorderLevel}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value === '' ? '' : Number(e.target.value) })}
+                    placeholder="0"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#2089C8]/30 focus:border-[#2089C8]"
                   />
                 </div>
@@ -324,8 +330,10 @@ export const StockItemModal = ({ isOpen, onClose, onSave, mode = 'create', initi
                     required
                     step="0.01"
                     min="0"
-                    value={formData.unitPrice}
-                    onChange={(e) => setFormData({ ...formData, unitPrice: Number(e.target.value) })}
+                    value={formData.unitPrice === 0 || formData.unitPrice === '' ? '' : formData.unitPrice}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setFormData({ ...formData, unitPrice: e.target.value === '' ? '' : Number(e.target.value) })}
+                    placeholder="0.00"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2089C8]/30 focus:border-[#2089C8]"
                   />
                 </div>

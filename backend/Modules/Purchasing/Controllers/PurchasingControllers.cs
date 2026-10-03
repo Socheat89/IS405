@@ -87,11 +87,11 @@ public class PurchaseOrdersController : ControllerBase
 
     [HttpPost("{id:int}/approve")]
     [ProducesResponseType(typeof(PurchaseOrderDto), StatusCodes.Status200OK)]
-    public async Task<IActionResult> ApproveOrder(int id, CancellationToken cancellationToken)
+    public async Task<IActionResult> ApproveOrder(int id, [FromBody] ApprovePoRequest? request = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var result = await _purchasingService.ApproveOrderAsync(id, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+            var result = await _purchasingService.ApproveOrderAsync(id, request, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
             return Ok(result);
         }
         catch (Exception ex)
@@ -128,6 +128,26 @@ public class PurchaseOrdersController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+    }
+
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteOrder(
+        [FromServices] backend.Data.AppDbContext context,
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var userId = backend.Services.Permission.PermissionChecker.GetUserId(User);
+        if (userId == null) return Unauthorized();
+        if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(context, userId.Value, "purchase-orders.cancel", "purchase-orders.create", "purchases.view"))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: Insufficient permissions to delete purchase orders." });
+        }
+
+        var deleted = await _purchasingService.DeleteOrderAsync(id, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+        if (!deleted) return NotFound(new { message = $"Purchase order with ID {id} not found." });
+        return NoContent();
     }
 
     private int? GetCurrentUserId()

@@ -1,12 +1,14 @@
 // Purchase Orders Module Root — sub-module router
 import React, { useState } from 'react';
-import { ShoppingBag, PackageCheck } from 'lucide-react';
+import { ShoppingBag, PackageCheck, BarChart3 } from 'lucide-react';
 import { PurchaseOrdersPage } from './orders/PurchaseOrdersPage';
+import { PurchaseReportsPage } from './reports/PurchaseReportsPage';
 import { useAuth } from '../../context/AuthContext';
 
 const TABS = [
   { id: 'orders',   label: 'Purchase Orders', icon: ShoppingBag,  perm: 'purchase-orders.view' },
   { id: 'receipts', label: 'Goods Receipts',  icon: PackageCheck, perm: 'goods-receipts.view'  },
+  { id: 'reports',  label: 'Purchasing Reports', icon: BarChart3, perm: 'purchases.view'      },
 ];
 
 export const PurchaseModule = () => {
@@ -83,6 +85,7 @@ export const PurchaseModule = () => {
             <p className="text-xs mt-1">Coming soon — link to Stock In records</p>
           </div>
         )}
+        {currentTab === 'reports' && <PurchaseReportsPage />}
       </div>
     </div>
   );

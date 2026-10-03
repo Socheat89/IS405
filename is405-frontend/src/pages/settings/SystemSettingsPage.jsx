@@ -48,10 +48,10 @@ export const SystemSettingsPage = () => {
     try {
       const updated = await settingsService.saveSettings(settings);
       setSettings(prev => ({ ...prev, ...updated }));
-      toast.success('បានរក្សាទុកការកំណត់ក្រុមហ៊ុន និងប្រព័ន្ធ (Company & System Settings) បានជោគជ័យ!', 'Settings Saved');
+      toast.success('Company and system settings saved successfully!', 'Settings Saved');
     } catch (err) {
       console.warn('Failed to save settings:', err?.message);
-      toast.error('បរាជ័យក្នុងការរក្សាទុកការកំណត់');
+      toast.error('Failed to save settings');
     }
   };
 
@@ -72,10 +72,10 @@ export const SystemSettingsPage = () => {
   const handleSaveWarehouse = async (warehouseData, warehouseId) => {
     if (warehouseId) {
       await warehouseService.updateWarehouse(warehouseId, warehouseData);
-      toast.success(`បានកែប្រែឃ្លាំង '${warehouseData.name}' ជោគជ័យ!`);
+      toast.success(`Warehouse '${warehouseData.name}' updated successfully!`);
     } else {
       await warehouseService.createWarehouse(warehouseData);
-      toast.success(`បានបង្កើតឃ្លាំង '${warehouseData.name}' ថ្មីជោគជ័យ!`);
+      toast.success(`New warehouse '${warehouseData.name}' created successfully!`);
     }
     await loadAllData();
   };
@@ -107,7 +107,7 @@ export const SystemSettingsPage = () => {
           <div>
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">System & Company Configuration</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              គ្រប់គ្រងព័ត៌មានក្រុមហ៊ុន (Company Profile), ការកំណត់ឃ្លាំង (Warehouses), គោលការណ៍សុវត្ថិភាព 2FA, និងស្ថានភាពប្រព័ន្ធ
+              Manage company legal profile, multi-warehouse locations, 2FA security enforcement, and system microservices
             </p>
           </div>
         </div>
@@ -177,15 +177,15 @@ export const SystemSettingsPage = () => {
             <div className="border-b border-slate-100 pb-4">
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Building className="w-4 h-4 text-[#2089C8]" />
-                <span>Company Legal Profile & Information (ព័ត៌មានក្រុមហ៊ុន)</span>
+                <span>Company Legal Profile & Information</span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">ព័ត៌មាននេះនឹងត្រូវបង្ហាញនៅលើ របាយការណ៍, វិក្កយបត្រ (Invoices), និងប័ណ្ណទិញ/លក់ទំនិញទាំងអស់។</p>
+              <p className="text-xs text-slate-500 mt-0.5">This official company profile will be displayed on reports, invoices, and vouchers.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Company Legal Name (ឈ្មោះស្របច្បាប់ក្រុមហ៊ុន) *
+                  Company Legal Name *
                 </label>
                 <input
                   type="text"
@@ -198,7 +198,7 @@ export const SystemSettingsPage = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Application Title (ឈ្មោះកម្មវិធី)
+                  Application Title
                 </label>
                 <input
                   type="text"
@@ -211,7 +211,7 @@ export const SystemSettingsPage = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  VAT / Tax Identification No (លេខអត្តសញ្ញាណកម្មសារពើពន្ធ)
+                  VAT / Tax Identification No
                 </label>
                 <input
                   type="text"
@@ -224,7 +224,7 @@ export const SystemSettingsPage = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Contact Phone Number (លេខទូរស័ព្ទ)
+                  Contact Phone Number
                 </label>
                 <input
                   type="text"
@@ -237,7 +237,7 @@ export const SystemSettingsPage = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Official Email (អ៊ីមែលផ្លូវការ)
+                  Official Email
                 </label>
                 <input
                   type="email"
@@ -250,7 +250,7 @@ export const SystemSettingsPage = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Company Headquarter Address (អាសយដ្ឋានក្រុមហ៊ុន)
+                  Company Headquarter Address
                 </label>
                 <input
                   type="text"
@@ -268,15 +268,15 @@ export const SystemSettingsPage = () => {
             <div className="border-b border-slate-100 pb-4">
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Warehouse className="w-4 h-4 text-[#2089C8]" />
-                <span>Default Warehouse & Multi-Warehouse Policy (ការកំណត់ឃ្លាំងលំនាំដើម & គោលការណ៍)</span>
+                <span>Default Warehouse & Multi-Warehouse Policy</span>
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">កំណត់ឃ្លាំងមេរបស់ក្រុមហ៊ុន និងការកំណត់ប្រតិបត្តិការស្តុក</p>
+              <p className="text-xs text-slate-500 mt-0.5">Designate the primary distribution facility and configure inventory handling rules.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Default Company Warehouse (ឃ្លាំងលំនាំដើមរបស់ក្រុមហ៊ុន) *
+                  Default Company Warehouse *
                 </label>
                 <select
                   value={settings.defaultWarehouseId || ''}
@@ -288,7 +288,7 @@ export const SystemSettingsPage = () => {
                   }}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-[#2089C8]/30 focus:border-[#2089C8]"
                 >
-                  <option value="">-- ជ្រើសរើសឃ្លាំងលំនាំដើម --</option>
+                  <option value="">-- Select Default Warehouse --</option>
                   {warehouses.map(w => (
                     <option key={w.id} value={w.id}>
                       {w.name} ({w.code}) {w.location ? `- ${w.location}` : ''}
@@ -296,13 +296,13 @@ export const SystemSettingsPage = () => {
                   ))}
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  ឃ្លាំងនេះនឹងត្រូវបានជ្រើសរើសជាស្វ័យប្រវត្តិពេលបង្កើតវិក្កយបត្រ, ប័ណ្ណទិញទំនិញ (PO) ឬកែប្រែស្តុក។
+                  This facility will be automatically selected for new sales invoices, purchase orders, and stock adjustments.
                 </p>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Default Currency (រូបិយប័ណ្ណ)
+                  Default Currency
                 </label>
                 <select
                   value={settings.currencyCode || settings.currency || 'USD'}
@@ -320,7 +320,7 @@ export const SystemSettingsPage = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Standard VAT Rate (អត្រាពន្ធ %)
+                  Standard VAT Rate (%)
                 </label>
                 <input
                   type="number"
@@ -334,7 +334,7 @@ export const SystemSettingsPage = () => {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Timezone (តំបន់ម៉ោង)
+                  Timezone
                 </label>
                 <select
                   value={settings.timezone || 'Asia/Phnom_Penh'}
@@ -349,9 +349,9 @@ export const SystemSettingsPage = () => {
 
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between">
               <div>
-                <span className="font-bold text-slate-900 text-xs block">Multi-Warehouse Operations (បើកដំណើរការគ្រប់គ្រងឃ្លាំងច្រើន)</span>
+                <span className="font-bold text-slate-900 text-xs block">Multi-Warehouse Operations</span>
                 <span className="text-[11px] text-slate-500">
-                  អនុញ្ញាតអោយបង្កើតឃ្លាំងសាខាជាច្រើន និងធ្វើការផ្ទេរទំនិញរវាងឃ្លាំង (Inter-Warehouse Transfers)
+                  Allow branch facility creation and inter-warehouse stock transfers.
                 </span>
               </div>
               <input
@@ -372,10 +372,10 @@ export const SystemSettingsPage = () => {
             <div>
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Warehouse className="w-4 h-4 text-[#2089C8]" />
-                <span>Company Warehouses & Distribution Facilities (ឃ្លាំង និងសាខា)</span>
+                <span>Company Warehouses & Distribution Facilities</span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                គ្រប់គ្រងឃ្លាំង និងសាខាចែកចាយទំនិញទាំងអស់ក្នុងក្រុមហ៊ុន។ អ្នកគ្រប់គ្រង (Admin) អាចចាត់ចែងសិទ្ធិឃ្លាំងទៅកាន់ User តាមផ្នែកនីមួយៗ។
+                Manage all distribution centers, regional warehouses, and retail facilities. Administrators can assign branch permissions per user.
               </p>
             </div>
             <button
@@ -383,7 +383,7 @@ export const SystemSettingsPage = () => {
               className="btn-primary px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
             >
               <Plus className="w-4 h-4" />
-              <span>បន្ថែមឃ្លាំងថ្មី (Add Warehouse)</span>
+              <span>Add Warehouse</span>
             </button>
           </div>
 
@@ -408,7 +408,7 @@ export const SystemSettingsPage = () => {
                         {isDefault && (
                           <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-[#2089C8] text-white flex items-center gap-1">
                             <Sparkles className="w-3 h-3" />
-                            <span>ឃ្លាំងមេ / Default</span>
+                            <span>Default Facility</span>
                           </span>
                         )}
                       </div>
@@ -417,7 +417,7 @@ export const SystemSettingsPage = () => {
                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                           : 'bg-slate-100 text-slate-500'
                       }`}>
-                        {wh.isActive ? 'សកម្ម (Active)' : 'អសកម្ម'}
+                        {wh.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </div>
 
@@ -426,7 +426,7 @@ export const SystemSettingsPage = () => {
                     <div className="mt-3 space-y-1.5 text-xs text-slate-600">
                       <div className="flex items-center gap-2 text-slate-500">
                         <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                        <span className="truncate">{wh.location || 'គ្មានអាសយដ្ឋាន'}</span>
+                        <span className="truncate">{wh.location || 'No address specified'}</span>
                       </div>
                       {wh.contactPhone && (
                         <div className="flex items-center gap-2 text-slate-500">
@@ -444,16 +444,16 @@ export const SystemSettingsPage = () => {
                           updateSetting('defaultWarehouseId', wh.id);
                           updateSetting('defaultWarehouseLocation', wh.name);
                           await settingsService.saveSettings({ ...settings, defaultWarehouseId: wh.id, defaultWarehouseLocation: wh.name });
-                          toast.success(`បានកំណត់ '${wh.name}' ជាឃ្លាំងមេរបស់ក្រុមហ៊ុន!`);
+                          toast.success(`Set '${wh.name}' as the default company warehouse!`);
                         }}
                         className="text-[11px] font-semibold text-[#2089C8] hover:underline cursor-pointer"
                       >
-                        កំណត់ជាឃ្លាំងមេ (Set Default)
+                        Set Default Facility
                       </button>
                     ) : (
                       <span className="text-[11px] font-medium text-slate-500 flex items-center gap-1">
                         <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        ឃ្លាំងលំនាំដើម
+                        Default Facility
                       </span>
                     )}
 
@@ -462,7 +462,7 @@ export const SystemSettingsPage = () => {
                       className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
-                      <span>កែប្រែ</span>
+                      <span>Edit</span>
                     </button>
                   </div>
                 </div>
@@ -478,7 +478,7 @@ export const SystemSettingsPage = () => {
           <div className="border-b border-slate-100 pb-4">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>2FA & Authentication Security Policies (គោលការណ៍សុវត្ថិភាព)</span>
+              <span>2FA & Authentication Security Policies</span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">Configure security rules and enforcement for all system accounts.</p>
           </div>

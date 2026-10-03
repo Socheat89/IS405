@@ -142,6 +142,18 @@ public class CategoriesController : ControllerBase
 
         return Ok(updated);
     }
+
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteCategory(int id, CancellationToken cancellationToken)
+    {
+        var deleted = await _catalogService.DeleteCategoryAsync(id, cancellationToken);
+        if (!deleted)
+            return NotFound(new { message = $"Category with ID {id} not found." });
+
+        return NoContent();
+    }
 }
 
 [ApiController]
@@ -174,6 +186,18 @@ public class BrandsController : ControllerBase
         var created = await _catalogService.CreateBrandAsync(request, cancellationToken);
         return CreatedAtAction(nameof(GetBrands), new { id = created.Id }, created);
     }
+
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteBrand(int id, CancellationToken cancellationToken)
+    {
+        var deleted = await _catalogService.DeleteBrandAsync(id, cancellationToken);
+        if (!deleted)
+            return NotFound(new { message = $"Brand with ID {id} not found." });
+
+        return NoContent();
+    }
 }
 
 [ApiController]
@@ -205,5 +229,17 @@ public class UnitsController : ControllerBase
 
         var created = await _catalogService.CreateUnitAsync(request, cancellationToken);
         return CreatedAtAction(nameof(GetUnits), new { id = created.Id }, created);
+    }
+
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteUnit(int id, CancellationToken cancellationToken)
+    {
+        var deleted = await _catalogService.DeleteUnitAsync(id, cancellationToken);
+        if (!deleted)
+            return NotFound(new { message = $"Unit with ID {id} not found." });
+
+        return NoContent();
     }
 }

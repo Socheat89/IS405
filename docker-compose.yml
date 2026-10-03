@@ -1,16 +1,32 @@
 services:
+  oracle:
+    image: socheat29/oracle:latest
+    container_name: is405_oracle
+    ports:
+      - "3333:1521"
+    environment:
+      - ORACLE_PASSWORD=123
+      - APP_USER=system
+      - APP_USER_PASSWORD=123
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+    restart: unless-stopped
+
   backend:
     image: socheat29/backend:latest
     container_name: is405_backend
     ports:
       - "5230:5000"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5000
-      - DatabaseProvider=Sqlite
-      - ConnectionStrings__DefaultConnection=Data Source=/app/data/is405.db
-    volumes:
-      - ./data:/app/data
+      - DatabaseProvider=Oracle
+      - ConnectionStrings__OracleConnection=Data Source=oracle:1521/XEPDB1;User Id=system;Password=123;
+      - Jwt__Key=IS405_SuperSecret_Jwt_SigningKey_With_At_Least_256_Bits_Secure_Key_2026!
+      - Jwt__Issuer=IS405_Backend
+      - Jwt__Audience=IS405_Frontend
+    depends_on:
+      - oracle
     restart: unless-stopped
 
   frontend:
@@ -21,3 +37,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  oracle_data:

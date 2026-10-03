@@ -37,8 +37,10 @@ public record SalesOrderItemDto(
 );
 
 public record CreateSaleRequest(
-    int CustomerId,
+    int? CustomerId,
+    string? CustomerName,
     int? WarehouseId,
+    DateTimeOffset? DeliveryDate,
     decimal Tax,
     decimal Discount,
     string? Notes,
@@ -48,9 +50,13 @@ public record CreateSaleRequest(
 );
 
 public record CreateSaleItemRequest(
-    int ProductId,
+    int? ProductId,
+    string? ItemName,
+    string? ProductName,
+    string? ProductSku,
     int Quantity,
     decimal UnitPrice,
+    decimal? UnitCost,
     decimal Discount,
     decimal Tax
 );
@@ -127,3 +133,17 @@ public record CreateSalesReturnItemRequest(
     string? Condition,
     string? Reason
 );
+
+public record UpdateSaleRequest(
+    int? CustomerId,
+    string? CustomerName,
+    int? WarehouseId,
+    DateTimeOffset? DeliveryDate,
+    decimal Tax,
+    decimal Discount,
+    string? Notes,
+    string? Status,
+    IReadOnlyList<CreateSaleItemRequest> Items
+);
+
+public record UpdateSaleStatusRequest(string Status);

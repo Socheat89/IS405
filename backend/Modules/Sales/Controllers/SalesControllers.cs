@@ -68,6 +68,39 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpPut("{id:int}")]
+    [HttpPost("{id:int}")]
+    [HttpPost("{id:int}/update")]
+    [HttpPatch("{id:int}")]
+    [ProducesResponseType(typeof(SalesOrderDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateSale(int id, [FromBody] UpdateSaleRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _salesService.UpdateSaleAsync(id, request, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+            return Ok(updated);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPatch("{id:int}/status")]
+    [ProducesResponseType(typeof(SalesOrderDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateSaleStatus(int id, [FromBody] UpdateSaleStatusRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var updated = await _salesService.UpdateSaleStatusAsync(id, request.Status, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+            return Ok(updated);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpPost("{id:int}/confirm")]
     [ProducesResponseType(typeof(SalesOrderDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> ConfirmSale(int id, CancellationToken cancellationToken)
@@ -96,6 +129,26 @@ public class SalesController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+    }
+
+    [HttpDelete("{id:int}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteSale(
+        [FromServices] backend.Data.AppDbContext context,
+        int id,
+        CancellationToken cancellationToken)
+    {
+        var userId = backend.Services.Permission.PermissionChecker.GetUserId(User);
+        if (userId == null) return Unauthorized();
+        if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(context, userId.Value, "sales.cancel", "sales.create", "sales.view"))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: Insufficient permissions to delete sales orders." });
+        }
+
+        var deleted = await _salesService.DeleteSaleAsync(id, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+        if (!deleted) return NotFound(new { message = $"Sales order with ID {id} not found." });
+        return NoContent();
     }
 
     // Payments for this sale

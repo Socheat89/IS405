@@ -6,6 +6,7 @@
 **/*.suo
 **/*.userosscache
 **/*.sln.docstates
+**/publish/
 
 # Node & Frontend
 **/node_modules/

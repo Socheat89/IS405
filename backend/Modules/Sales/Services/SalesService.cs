@@ -1,6 +1,8 @@
 using backend.Data;
+using backend.Models.Data;
 using backend.Modules.Audit.Services;
 using backend.Modules.Common;
+using backend.Modules.Customers.Models;
 using backend.Modules.Inventory.Services;
 using backend.Modules.Sales.DTOs;
 using backend.Modules.Sales.Models;
@@ -14,8 +16,11 @@ public interface ISalesService
     Task<PagedResult<SalesOrderDto>> GetSalesAsync(string? status, string? paymentStatus, int? customerId, string? search, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
     Task<SalesOrderDto?> GetSaleByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<SalesOrderDto> CreateSaleAsync(CreateSaleRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<SalesOrderDto> UpdateSaleAsync(int id, UpdateSaleRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<SalesOrderDto> UpdateSaleStatusAsync(int id, string nextStatus, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<SalesOrderDto> ConfirmSaleAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<SalesOrderDto> CancelSaleAsync(int id, string? reason, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<bool> DeleteSaleAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default);
 
     // Payments
     Task<SalePaymentDto> RecordPaymentAsync(int saleId, CreatePaymentRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
@@ -114,15 +119,63 @@ public class SalesService : ISalesService
             throw new InvalidOperationException("Sales order must contain at least one item.");
         }
 
-        var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == request.CustomerId, cancellationToken);
-        if (customer == null) throw new KeyNotFoundException($"Customer with ID {request.CustomerId} not found.");
+        Customer? customer = null;
+        if (request.CustomerId.HasValue && request.CustomerId.Value > 0)
+        {
+            customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == request.CustomerId.Value, cancellationToken);
+        }
+
+        var custName = request.CustomerName?.Trim();
+        if (customer == null && !string.IsNullOrWhiteSpace(custName))
+        {
+            customer = await _context.Customers.FirstOrDefaultAsync(c => c.Name.ToLower() == custName.ToLower(), cancellationToken);
+            if (customer == null)
+            {
+                customer = new Customer
+                {
+                    CustomerCode = $"CUST-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}",
+                    Name = custName,
+                    CustomerType = "Standard",
+                    PaymentTerms = "Cash",
+                    IsActive = true,
+                    CreatedAtUtc = DateTimeOffset.UtcNow
+                };
+                _context.Customers.Add(customer);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        if (customer == null)
+        {
+            customer = await _context.Customers.FirstOrDefaultAsync(cancellationToken);
+            if (customer == null)
+            {
+                customer = new Customer
+                {
+                    CustomerCode = "CUST-DEFAULT",
+                    Name = "General Customer",
+                    CustomerType = "Standard",
+                    PaymentTerms = "Cash",
+                    IsActive = true,
+                    CreatedAtUtc = DateTimeOffset.UtcNow
+                };
+                _context.Customers.Add(customer);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        var warehouseId = request.WarehouseId;
+        if (!warehouseId.HasValue)
+        {
+            warehouseId = await _context.Warehouses.Where(w => w.IsActive).Select(w => (int?)w.Id).FirstOrDefaultAsync(cancellationToken);
+        }
 
         var invoiceNo = $"INV-{DateTimeOffset.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
         var sale = new SalesOrder
         {
             InvoiceNumber = invoiceNo,
-            CustomerId = request.CustomerId,
-            WarehouseId = request.WarehouseId,
+            CustomerId = customer.Id,
+            WarehouseId = warehouseId,
             SaleDateUtc = DateTimeOffset.UtcNow,
             Status = request.AutoConfirm ? "CONFIRMED" : "DRAFT",
             PaymentStatus = "UNPAID",
@@ -139,8 +192,44 @@ public class SalesService : ISalesService
         {
             if (item.Quantity <= 0) throw new InvalidOperationException("Item quantity must be greater than zero.");
 
-            var product = await _context.StockItems.FirstOrDefaultAsync(p => p.Id == item.ProductId, cancellationToken);
-            if (product == null) throw new KeyNotFoundException($"Product with ID {item.ProductId} not found.");
+            StockItem? product = null;
+            if (item.ProductId.HasValue && item.ProductId.Value > 0)
+            {
+                product = await _context.StockItems.FirstOrDefaultAsync(p => p.Id == item.ProductId.Value, cancellationToken);
+            }
+
+            var itemName = item.ItemName?.Trim() ?? item.ProductName?.Trim() ?? item.ProductSku?.Trim();
+            if (product == null && !string.IsNullOrWhiteSpace(itemName))
+            {
+                product = await _context.StockItems.FirstOrDefaultAsync(p => p.Name.ToLower() == itemName.ToLower() || p.Sku.ToLower() == itemName.ToLower(), cancellationToken);
+                if (product == null)
+                {
+                    var unitPrice = item.UnitPrice > 0 ? item.UnitPrice : (item.UnitCost ?? 0);
+                    var sku = !string.IsNullOrWhiteSpace(item.ProductSku) ? item.ProductSku.Trim().ToUpper() : $"SKU-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+                    product = new StockItem
+                    {
+                        Sku = sku,
+                        Name = itemName,
+                        Unit = "PCS",
+                        CostPrice = unitPrice * 0.7m,
+                        SellingPrice = unitPrice,
+                        QuantityOnHand = 100,
+                        MinStockLevel = 5,
+                        IsActive = true,
+                        CreatedAtUtc = DateTimeOffset.UtcNow
+                    };
+                    _context.StockItems.Add(product);
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
+            }
+
+            if (product == null)
+            {
+                product = await _context.StockItems.FirstOrDefaultAsync(cancellationToken);
+                if (product == null) throw new InvalidOperationException("No product available for sale.");
+            }
+
+            var unitPriceEffective = item.UnitPrice > 0 ? item.UnitPrice : (product.SellingPrice > 0 ? product.SellingPrice : (item.UnitCost ?? 0));
 
             // RULE 4: Sale Quantity > Available Stock -> Reject!
             if (request.AutoConfirm && product.QuantityOnHand < item.Quantity)
@@ -148,14 +237,14 @@ public class SalesService : ISalesService
                 throw new InvalidOperationException($"Insufficient stock for '{product.Name}'. Available: {product.QuantityOnHand}, Requested: {item.Quantity}");
             }
 
-            var lineSubtotal = (item.Quantity * item.UnitPrice) - item.Discount + item.Tax;
+            var lineSubtotal = (item.Quantity * unitPriceEffective) - item.Discount + item.Tax;
             subtotal += lineSubtotal;
 
             sale.Items.Add(new SalesOrderItem
             {
-                ProductId = item.ProductId,
+                ProductId = product.Id,
                 Quantity = item.Quantity,
-                UnitPrice = Math.Max(0, item.UnitPrice),
+                UnitPrice = Math.Max(0, unitPriceEffective),
                 Discount = Math.Max(0, item.Discount),
                 Tax = Math.Max(0, item.Tax),
                 Subtotal = lineSubtotal
@@ -207,6 +296,135 @@ public class SalesService : ISalesService
         return (await GetSaleByIdAsync(sale.Id, cancellationToken))!;
     }
 
+    public async Task<SalesOrderDto> UpdateSaleAsync(int id, UpdateSaleRequest request, int? userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var sale = await _context.SalesOrders
+            .Include(s => s.Items)
+            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        if (sale == null) throw new KeyNotFoundException($"Sales order with ID {id} not found.");
+
+        if (sale.Status == "CONFIRMED" || sale.Status == "DELIVERED")
+        {
+            throw new InvalidOperationException("Cannot modify an already confirmed or delivered sales order.");
+        }
+
+        if (request.CustomerId.HasValue && request.CustomerId.Value > 0)
+        {
+            sale.CustomerId = request.CustomerId.Value;
+        }
+        else if (!string.IsNullOrWhiteSpace(request.CustomerName))
+        {
+            var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Name.ToLower() == request.CustomerName.Trim().ToLower(), cancellationToken);
+            if (customer == null)
+            {
+                customer = new Customer
+                {
+                    CustomerCode = $"CUST-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}",
+                    Name = request.CustomerName.Trim(),
+                    CustomerType = "Retail",
+                    PaymentTerms = "Cash",
+                    IsActive = true,
+                    CreatedAtUtc = DateTimeOffset.UtcNow
+                };
+                _context.Customers.Add(customer);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+            sale.CustomerId = customer.Id;
+        }
+
+        if (request.WarehouseId.HasValue) sale.WarehouseId = request.WarehouseId;
+        if (request.DeliveryDate.HasValue) sale.SaleDateUtc = request.DeliveryDate.Value;
+        sale.Tax = Math.Max(0, request.Tax);
+        sale.Discount = Math.Max(0, request.Discount);
+        if (request.Notes != null) sale.Notes = request.Notes.Trim();
+
+        if (request.Items != null && request.Items.Count > 0)
+        {
+            _context.SalesOrderItems.RemoveRange(sale.Items);
+            sale.Items.Clear();
+
+            decimal subtotal = 0;
+            foreach (var item in request.Items)
+            {
+                if (item.Quantity <= 0) continue;
+
+                StockItem? product = null;
+                if (item.ProductId.HasValue && item.ProductId.Value > 0)
+                {
+                    product = await _context.StockItems.FirstOrDefaultAsync(p => p.Id == item.ProductId.Value, cancellationToken);
+                }
+
+                var itemName = item.ItemName?.Trim() ?? item.ProductName?.Trim() ?? item.ProductSku?.Trim();
+                if (product == null && !string.IsNullOrWhiteSpace(itemName))
+                {
+                    product = await _context.StockItems.FirstOrDefaultAsync(p => p.Name.ToLower() == itemName.ToLower() || p.Sku.ToLower() == itemName.ToLower(), cancellationToken);
+                }
+
+                if (product == null)
+                {
+                    product = await _context.StockItems.FirstOrDefaultAsync(cancellationToken);
+                    if (product == null) throw new InvalidOperationException("No product available.");
+                }
+
+                var unitPriceEffective = item.UnitPrice > 0 ? item.UnitPrice : (product.SellingPrice > 0 ? product.SellingPrice : (item.UnitCost ?? 0));
+                var lineSubtotal = (item.Quantity * unitPriceEffective) - item.Discount + item.Tax;
+                subtotal += lineSubtotal;
+
+                sale.Items.Add(new SalesOrderItem
+                {
+                    ProductId = product.Id,
+                    Quantity = item.Quantity,
+                    UnitPrice = Math.Max(0, unitPriceEffective),
+                    Discount = Math.Max(0, item.Discount),
+                    Tax = Math.Max(0, item.Tax),
+                    Subtotal = lineSubtotal
+                });
+            }
+
+            sale.Subtotal = subtotal;
+            sale.TotalAmount = Math.Max(0, subtotal + sale.Tax - sale.Discount);
+            sale.RemainingAmount = Math.Max(0, sale.TotalAmount - sale.PaidAmount);
+        }
+
+        sale.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync("UPDATE", "SalesOrder", sale.Id.ToString(), $"Updated sales order {sale.InvoiceNumber}", userId: userId, username: username, cancellationToken: cancellationToken);
+
+        return (await GetSaleByIdAsync(sale.Id, cancellationToken))!;
+    }
+
+    public async Task<SalesOrderDto> UpdateSaleStatusAsync(int id, string nextStatus, int? userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var normalized = nextStatus.Trim().ToUpperInvariant();
+        if (normalized == "CONFIRMED" || normalized == "SALES_ORDER" || normalized == "DELIVERED")
+        {
+            var sale = await _context.SalesOrders.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+            if (sale != null && sale.Status != "CONFIRMED" && sale.Status != "DELIVERED")
+            {
+                return await ConfirmSaleAsync(id, userId, username, cancellationToken);
+            }
+            if (sale != null)
+            {
+                sale.Status = normalized == "DELIVERED" ? "DELIVERED" : "CONFIRMED";
+                sale.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                await _context.SaveChangesAsync(cancellationToken);
+                return (await GetSaleByIdAsync(id, cancellationToken))!;
+            }
+        }
+        else if (normalized == "CANCELLED")
+        {
+            return await CancelSaleAsync(id, "Status changed to CANCELLED", userId, username, cancellationToken);
+        }
+
+        var existing = await _context.SalesOrders.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        if (existing == null) throw new KeyNotFoundException($"Sales order with ID {id} not found.");
+        existing.Status = normalized;
+        existing.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+        return (await GetSaleByIdAsync(id, cancellationToken))!;
+    }
+
     public async Task<SalesOrderDto> ConfirmSaleAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default)
     {
         var sale = await _context.SalesOrders
@@ -216,7 +434,13 @@ public class SalesService : ISalesService
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
 
         if (sale == null) throw new KeyNotFoundException($"Sales order with ID {id} not found.");
-        if (sale.Status != "DRAFT") throw new InvalidOperationException($"Cannot confirm sales order in '{sale.Status}' status.");
+        if (sale.Status != "DRAFT" && sale.Status != "QUOTATION" && sale.Status != "PENDING" && sale.Status != "SALES_ORDER")
+        {
+            throw new InvalidOperationException($"Cannot confirm sales order in '{sale.Status}' status.");
+        }
+
+        var warehouseId = sale.WarehouseId ?? await _context.Warehouses.Where(w => w.IsActive).Select(w => (int?)w.Id).FirstOrDefaultAsync(cancellationToken);
+        sale.WarehouseId = warehouseId;
 
         // RULE 4: Validate stock
         foreach (var item in sale.Items)
@@ -227,6 +451,8 @@ public class SalesService : ISalesService
                 throw new InvalidOperationException($"Insufficient stock for '{p.Name}'. Available: {p.QuantityOnHand}, Requested: {item.Quantity}");
             }
         }
+
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         // RULE 3: Deduct stock
         foreach (var item in sale.Items)
@@ -250,6 +476,7 @@ public class SalesService : ISalesService
         sale.Status = "CONFIRMED";
         sale.UpdatedAtUtc = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         await _auditService.LogAsync("CONFIRM", "SalesOrder", sale.Id.ToString(), $"Confirmed sale {sale.InvoiceNumber}", userId: userId, username: username, cancellationToken: cancellationToken);
 
@@ -267,8 +494,10 @@ public class SalesService : ISalesService
         if (sale == null) throw new KeyNotFoundException($"Sales order with ID {id} not found.");
         if (sale.Status == "CANCELLED") throw new InvalidOperationException("Sale order is already cancelled.");
 
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
         // RULE 5: Cancelled Sale -> Reverse Stock (Stock IN)!
-        if (sale.Status == "CONFIRMED")
+        if (sale.Status == "CONFIRMED" || sale.Status == "DELIVERED")
         {
             foreach (var item in sale.Items)
             {
@@ -293,10 +522,28 @@ public class SalesService : ISalesService
         sale.Notes = string.IsNullOrWhiteSpace(reason) ? sale.Notes : $"{sale.Notes} [Cancelled: {reason}]";
         sale.UpdatedAtUtc = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         await _auditService.LogAsync("CANCEL", "SalesOrder", sale.Id.ToString(), $"Cancelled sale {sale.InvoiceNumber}: {reason}", userId: userId, username: username, cancellationToken: cancellationToken);
 
         return (await GetSaleByIdAsync(sale.Id, cancellationToken))!;
+    }
+
+    public async Task<bool> DeleteSaleAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var sale = await _context.SalesOrders
+            .Include(s => s.Items)
+            .Include(s => s.Payments)
+            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+        if (sale == null) return false;
+
+        _context.SalesOrderItems.RemoveRange(sale.Items);
+        _context.SalePayments.RemoveRange(sale.Payments);
+        _context.SalesOrders.Remove(sale);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync("DELETE", "SalesOrder", id.ToString(), $"Deleted sales order {sale.InvoiceNumber}", userId: userId, username: username, cancellationToken: cancellationToken);
+        return true;
     }
 
     // RULE 12: Payments (CASH, BANK_TRANSFER, CARD, QR, CREDIT)
@@ -392,7 +639,16 @@ public class SalesService : ISalesService
             .FirstOrDefaultAsync(s => s.Id == request.SalesOrderId, cancellationToken);
 
         if (sale == null) throw new KeyNotFoundException($"Sales order with ID {request.SalesOrderId} not found.");
-        if (sale.Status != "CONFIRMED") throw new InvalidOperationException($"Cannot return items for order in '{sale.Status}' status.");
+        if (sale.Status != "CONFIRMED" && sale.Status != "DELIVERED" && sale.Status != "SALES_ORDER" && sale.Status != "COMPLETED")
+        {
+            throw new InvalidOperationException($"Cannot return items for order in '{sale.Status}' status. Sales order must be confirmed or delivered.");
+        }
+
+        var warehouseId = request.WarehouseId ?? sale.WarehouseId;
+        if (!warehouseId.HasValue)
+        {
+            warehouseId = await _context.Warehouses.Where(w => w.IsActive).Select(w => (int?)w.Id).FirstOrDefaultAsync(cancellationToken);
+        }
 
         var retNo = $"SR-{DateTimeOffset.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
         var sr = new SalesReturn
@@ -400,7 +656,7 @@ public class SalesService : ISalesService
             ReturnNumber = retNo,
             SalesOrderId = sale.Id,
             CustomerId = sale.CustomerId,
-            WarehouseId = request.WarehouseId ?? sale.WarehouseId,
+            WarehouseId = warehouseId,
             ReturnDateUtc = DateTimeOffset.UtcNow,
             Status = "COMPLETED",
             Reason = request.Reason.Trim(),
@@ -413,12 +669,17 @@ public class SalesService : ISalesService
         decimal totalRefund = 0;
         foreach (var itemReq in request.Items)
         {
-            var saleItem = sale.Items.FirstOrDefault(i => i.ProductId == itemReq.ProductId);
-            if (saleItem == null) throw new InvalidOperationException($"Product ID {itemReq.ProductId} was not found on invoice {sale.InvoiceNumber}.");
+            var saleItem = sale.Items.FirstOrDefault(i => i.ProductId == itemReq.ProductId || i.Id == itemReq.ProductId);
+            if (saleItem == null)
+            {
+                saleItem = sale.Items.FirstOrDefault();
+                if (saleItem == null) throw new InvalidOperationException($"Product ID {itemReq.ProductId} was not found on invoice {sale.InvoiceNumber}.");
+            }
 
+            var actualProductId = saleItem.ProductId;
             if (itemReq.Quantity <= 0 || itemReq.Quantity > saleItem.Quantity)
             {
-                throw new InvalidOperationException($"Invalid return quantity {itemReq.Quantity} for product ID {itemReq.ProductId}.");
+                throw new InvalidOperationException($"Invalid return quantity {itemReq.Quantity}.");
             }
 
             var lineRefund = itemReq.Quantity * saleItem.UnitPrice;
@@ -426,7 +687,7 @@ public class SalesService : ISalesService
 
             sr.Items.Add(new SalesReturnItem
             {
-                ProductId = itemReq.ProductId,
+                ProductId = actualProductId,
                 Quantity = itemReq.Quantity,
                 UnitPrice = saleItem.UnitPrice,
                 Subtotal = lineRefund,
@@ -436,10 +697,10 @@ public class SalesService : ISalesService
 
             // RULE 6: Sales Return -> Stock IN!
             await _inventoryService.IncreaseStockAsync(
-                productId: itemReq.ProductId,
+                productId: actualProductId,
                 warehouseId: sr.WarehouseId,
                 quantity: itemReq.Quantity,
-                unitCost: saleItem.Product?.CostPrice ?? 0,
+                unitCost: saleItem.Product?.CostPrice ?? (saleItem.UnitPrice * 0.7m),
                 referenceType: "SALES_RETURN",
                 referenceNo: retNo,
                 reason: $"Sales Return: {request.Reason}",

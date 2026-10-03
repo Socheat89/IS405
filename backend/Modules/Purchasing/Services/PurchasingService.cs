@@ -1,9 +1,11 @@
 using backend.Data;
+using backend.Models.Data;
 using backend.Modules.Audit.Services;
 using backend.Modules.Common;
 using backend.Modules.Inventory.Services;
 using backend.Modules.Purchasing.DTOs;
 using backend.Modules.Purchasing.Models;
+using backend.Modules.Suppliers.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace backend.Modules.Purchasing.Services;
@@ -15,9 +17,10 @@ public interface IPurchasingService
     Task<PurchaseOrderDto?> GetOrderByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<PurchaseOrderDto> CreateOrderAsync(CreatePoRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<PurchaseOrderDto?> UpdateOrderAsync(int id, UpdatePoRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
-    Task<PurchaseOrderDto> ApproveOrderAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<PurchaseOrderDto> ApproveOrderAsync(int id, ApprovePoRequest? request, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<PurchaseOrderDto> RejectOrderAsync(int id, string? reason, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<PurchaseOrderDto> CancelOrderAsync(int id, string? reason, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<bool> DeleteOrderAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default);
 
     // Goods Receipt / GRN
     Task<PagedResult<GoodsReceiptDto>> GetGoodsReceiptsAsync(int? poId, int? warehouseId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
@@ -109,15 +112,63 @@ public class PurchasingService : IPurchasingService
             throw new InvalidOperationException("Purchase order must contain at least one item.");
         }
 
-        var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == request.SupplierId, cancellationToken);
-        if (supplier == null) throw new KeyNotFoundException($"Supplier with ID {request.SupplierId} not found.");
+        Supplier? supplier = null;
+        if (request.SupplierId.HasValue && request.SupplierId.Value > 0)
+        {
+            supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == request.SupplierId.Value, cancellationToken);
+        }
+        
+        var vendorName = request.VendorName?.Trim() ?? request.SupplierName?.Trim();
+        if (supplier == null && !string.IsNullOrWhiteSpace(vendorName))
+        {
+            supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Name.ToLower() == vendorName.ToLower(), cancellationToken);
+            if (supplier == null)
+            {
+                supplier = new Supplier
+                {
+                    SupplierCode = $"SUP-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}",
+                    Name = vendorName,
+                    PaymentTerms = request.PaymentTerms?.Trim() ?? "Net 30",
+                    IsActive = true,
+                    CreatedAtUtc = DateTimeOffset.UtcNow
+                };
+                _context.Suppliers.Add(supplier);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        if (supplier == null)
+        {
+            supplier = await _context.Suppliers.FirstOrDefaultAsync(cancellationToken);
+            if (supplier == null)
+            {
+                supplier = new Supplier
+                {
+                    SupplierCode = "SUP-DEFAULT",
+                    Name = "General Supplier",
+                    PaymentTerms = "Net 30",
+                    IsActive = true,
+                    CreatedAtUtc = DateTimeOffset.UtcNow
+                };
+                _context.Suppliers.Add(supplier);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        int? targetWarehouseId = request.WarehouseId;
+        if (!targetWarehouseId.HasValue || targetWarehouseId.Value <= 0)
+        {
+            var defWh = await _context.Warehouses.FirstOrDefaultAsync(w => w.Code == "WH-MAIN", cancellationToken) 
+                     ?? await _context.Warehouses.FirstOrDefaultAsync(cancellationToken);
+            if (defWh != null) targetWarehouseId = defWh.Id;
+        }
 
         var poNumber = $"PO-{DateTimeOffset.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
         var po = new PurchaseOrder
         {
             PoNumber = poNumber,
-            SupplierId = request.SupplierId,
-            WarehouseId = request.WarehouseId,
+            SupplierId = supplier.Id,
+            WarehouseId = targetWarehouseId,
             ExpectedDateUtc = request.ExpectedDateUtc,
             PaymentTerms = string.IsNullOrWhiteSpace(request.PaymentTerms) ? supplier.PaymentTerms : request.PaymentTerms.Trim(),
             Status = "PENDING_APPROVAL",
@@ -133,14 +184,49 @@ public class PurchasingService : IPurchasingService
         foreach (var item in request.Items)
         {
             if (item.Quantity <= 0) throw new InvalidOperationException("Item quantity must be greater than zero.");
-            var lineSubtotal = (item.Quantity * item.UnitCost) - item.Discount + item.Tax;
+            var unitCost = item.UnitCost > 0 ? item.UnitCost : (item.UnitPrice ?? 0);
+            var lineSubtotal = (item.Quantity * unitCost) - item.Discount + item.Tax;
             subtotal += lineSubtotal;
+
+            int productId = item.ProductId ?? 0;
+            if (productId <= 0)
+            {
+                var itemName = item.ItemName?.Trim() ?? item.ProductName?.Trim() ?? item.ProductSku?.Trim();
+                if (!string.IsNullOrWhiteSpace(itemName))
+                {
+                    var product = await _context.StockItems.FirstOrDefaultAsync(p => p.Name.ToLower() == itemName.ToLower() || p.Sku.ToLower() == itemName.ToLower(), cancellationToken);
+                    if (product == null)
+                    {
+                        var sku = !string.IsNullOrWhiteSpace(item.ProductSku) ? item.ProductSku.Trim().ToUpper() : $"SKU-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
+                        product = new StockItem
+                        {
+                            Sku = sku,
+                            Name = itemName,
+                            Unit = "PCS",
+                            CostPrice = unitCost,
+                            SellingPrice = unitCost * 1.3m,
+                            QuantityOnHand = 0,
+                            MinStockLevel = 5,
+                            IsActive = true,
+                            CreatedAtUtc = DateTimeOffset.UtcNow
+                        };
+                        _context.StockItems.Add(product);
+                        await _context.SaveChangesAsync(cancellationToken);
+                    }
+                    productId = product.Id;
+                }
+                else
+                {
+                    var defaultProduct = await _context.StockItems.FirstOrDefaultAsync(cancellationToken);
+                    if (defaultProduct != null) productId = defaultProduct.Id;
+                }
+            }
 
             po.Items.Add(new PurchaseOrderItem
             {
-                ProductId = item.ProductId,
+                ProductId = productId,
                 Quantity = item.Quantity,
-                UnitCost = Math.Max(0, item.UnitCost),
+                UnitCost = Math.Max(0, unitCost),
                 Discount = Math.Max(0, item.Discount),
                 Tax = Math.Max(0, item.Tax),
                 Subtotal = lineSubtotal,
@@ -185,13 +271,30 @@ public class PurchasingService : IPurchasingService
         decimal subtotal = 0;
         foreach (var item in request.Items)
         {
-            var lineSubtotal = (item.Quantity * item.UnitCost) - item.Discount + item.Tax;
+            int prodId = item.ProductId ?? 0;
+            if (prodId <= 0)
+            {
+                var itemName = item.ItemName?.Trim() ?? item.ProductName?.Trim() ?? item.ProductSku?.Trim();
+                if (!string.IsNullOrWhiteSpace(itemName))
+                {
+                    var p = await _context.StockItems.FirstOrDefaultAsync(x => x.Name.ToLower() == itemName.ToLower() || x.Sku.ToLower() == itemName.ToLower(), cancellationToken);
+                    if (p != null) prodId = p.Id;
+                }
+            }
+            if (prodId <= 0)
+            {
+                var defP = await _context.StockItems.FirstOrDefaultAsync(cancellationToken);
+                if (defP != null) prodId = defP.Id;
+            }
+
+            var uCost = item.UnitCost > 0 ? item.UnitCost : (item.UnitPrice ?? 0);
+            var lineSubtotal = (item.Quantity * uCost) - item.Discount + item.Tax;
             subtotal += lineSubtotal;
             po.Items.Add(new PurchaseOrderItem
             {
-                ProductId = item.ProductId,
+                ProductId = prodId,
                 Quantity = item.Quantity,
-                UnitCost = item.UnitCost,
+                UnitCost = uCost,
                 Discount = item.Discount,
                 Tax = item.Tax,
                 Subtotal = lineSubtotal,
@@ -208,9 +311,11 @@ public class PurchasingService : IPurchasingService
         return await GetOrderByIdAsync(po.Id, cancellationToken);
     }
 
-    public async Task<PurchaseOrderDto> ApproveOrderAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default)
+    public async Task<PurchaseOrderDto> ApproveOrderAsync(int id, ApprovePoRequest? request, int? userId, string? username, CancellationToken cancellationToken = default)
     {
-        var po = await _context.PurchaseOrders.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        var po = await _context.PurchaseOrders
+            .Include(p => p.Items)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
         if (po == null) throw new KeyNotFoundException($"Purchase order with ID {id} not found.");
         if (po.Status != "PENDING_APPROVAL" && po.Status != "DRAFT")
         {
@@ -220,10 +325,38 @@ public class PurchasingService : IPurchasingService
         po.Status = "APPROVED";
         po.ApprovedByUserId = userId;
         po.ApprovedByUsername = username;
+        if (!string.IsNullOrWhiteSpace(request?.Notes))
+        {
+            po.Notes = string.IsNullOrWhiteSpace(po.Notes) ? request.Notes : $"{po.Notes}\n[Manager Approval Note: {request.Notes}]";
+        }
         po.UpdatedAtUtc = DateTimeOffset.UtcNow;
+
+        // If Manager sets selling prices during approval, update the stock items in inventory
+        if (request?.ItemPrices != null && request.ItemPrices.Count > 0)
+        {
+            foreach (var priceSetting in request.ItemPrices)
+            {
+                if (priceSetting.ProductId > 0 && priceSetting.SellingPrice > 0)
+                {
+                    var stockItem = await _context.StockItems.FirstOrDefaultAsync(s => s.Id == priceSetting.ProductId, cancellationToken);
+                    if (stockItem != null)
+                    {
+                        stockItem.SellingPrice = priceSetting.SellingPrice;
+                        // Also sync cost price if this PO line had a valid cost
+                        var poItem = po.Items.FirstOrDefault(i => i.ProductId == priceSetting.ProductId);
+                        if (poItem != null && poItem.UnitCost > 0)
+                        {
+                            stockItem.CostPrice = poItem.UnitCost;
+                        }
+                        stockItem.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                    }
+                }
+            }
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
 
-        await _auditService.LogAsync("APPROVE", "PurchaseOrder", po.Id.ToString(), $"Approved purchase order {po.PoNumber}", userId: userId, username: username, cancellationToken: cancellationToken);
+        await _auditService.LogAsync("APPROVE", "PurchaseOrder", po.Id.ToString(), $"Approved purchase order {po.PoNumber} with selling price settings by manager {username}", userId: userId, username: username, cancellationToken: cancellationToken);
 
         return (await GetOrderByIdAsync(po.Id, cancellationToken))!;
     }
@@ -262,6 +395,21 @@ public class PurchasingService : IPurchasingService
         return (await GetOrderByIdAsync(po.Id, cancellationToken))!;
     }
 
+    public async Task<bool> DeleteOrderAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var po = await _context.PurchaseOrders
+            .Include(p => p.Items)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (po == null) return false;
+
+        _context.PurchaseOrderItems.RemoveRange(po.Items);
+        _context.PurchaseOrders.Remove(po);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync("DELETE", "PurchaseOrder", id.ToString(), $"Deleted purchase order {po.PoNumber}", userId: userId, username: username, cancellationToken: cancellationToken);
+        return true;
+    }
+
     // Goods Receipt / GRN: Rule 2 (Goods Received -> Stock IN)
     public async Task<GoodsReceiptDto> ProcessGoodsReceiptAsync(CreateGrnRequest request, int? userId, string? username, CancellationToken cancellationToken = default)
     {
@@ -279,6 +427,8 @@ public class PurchasingService : IPurchasingService
 
         var warehouseId = request.WarehouseId ?? po.WarehouseId;
         var grnNo = $"GRN-{DateTimeOffset.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
+
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         var grn = new GoodsReceipt
         {
@@ -351,6 +501,7 @@ public class PurchasingService : IPurchasingService
         po.UpdatedAtUtc = DateTimeOffset.UtcNow;
         _context.GoodsReceipts.Add(grn);
         await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         await _auditService.LogAsync("RECEIVE", "GoodsReceipt", grn.Id.ToString(), $"Processed GRN {grn.GrnNumber} for {po.PoNumber}. PO Status now: {po.Status}", userId: userId, username: username, cancellationToken: cancellationToken);
 
@@ -407,13 +558,26 @@ public class PurchasingService : IPurchasingService
         var supplier = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == request.SupplierId, cancellationToken);
         if (supplier == null) throw new KeyNotFoundException($"Supplier with ID {request.SupplierId} not found.");
 
+        var warehouseId = request.WarehouseId;
+        if (!warehouseId.HasValue && request.PurchaseOrderId.HasValue)
+        {
+            warehouseId = await _context.PurchaseOrders
+                .Where(p => p.Id == request.PurchaseOrderId.Value)
+                .Select(p => p.WarehouseId)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+        if (!warehouseId.HasValue)
+        {
+            warehouseId = await _context.Warehouses.Where(w => w.IsActive).Select(w => (int?)w.Id).FirstOrDefaultAsync(cancellationToken);
+        }
+
         var retNo = $"PR-{DateTimeOffset.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
         var pr = new PurchaseReturn
         {
             ReturnNumber = retNo,
             SupplierId = request.SupplierId,
             PurchaseOrderId = request.PurchaseOrderId,
-            WarehouseId = request.WarehouseId,
+            WarehouseId = warehouseId,
             ReturnDateUtc = DateTimeOffset.UtcNow,
             Status = "COMPLETED",
             Reason = request.Reason.Trim(),
@@ -442,7 +606,7 @@ public class PurchasingService : IPurchasingService
             // RULE 7: Purchase Return -> Stock OUT for defective units!
             await _inventoryService.DecreaseStockAsync(
                 productId: item.ProductId,
-                warehouseId: request.WarehouseId,
+                warehouseId: warehouseId,
                 quantity: item.Quantity,
                 unitPrice: item.UnitCost,
                 referenceType: "PURCHASE_RETURN",

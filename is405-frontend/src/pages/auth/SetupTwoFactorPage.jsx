@@ -52,7 +52,7 @@ export const SetupTwoFactorPage = () => {
   const submitCode = async (codeToSubmit) => {
     const code = codeToSubmit || digits.join('');
     if (code.length !== 6) {
-      setError('សូមបញ្ចូលលេខកូដសម្ងាត់ ៦ ខ្ទង់ពី Authenticator App');
+      setError('Please enter the 6-digit passcode from your Authenticator App');
       return;
     }
 
@@ -158,7 +158,7 @@ export const SetupTwoFactorPage = () => {
               Two-Factor Authentication Setup
             </h1>
             <p className="text-sky-100 text-xs mt-1.5 font-medium max-w-sm mx-auto leading-relaxed">
-              ភ្ជាប់គណនីរបស់អ្នកជាមួយ <strong className="text-white">Google Authenticator</strong> ឬ <strong className="text-white">Microsoft Authenticator</strong>
+              Connect your account with <strong className="text-white">Google Authenticator</strong> or <strong className="text-white">Microsoft Authenticator</strong>
             </p>
 
             {/* Step Progress Pills */}
@@ -227,7 +227,7 @@ export const SetupTwoFactorPage = () => {
                 {/* Manual Secret Key Card */}
                 <div className="pt-1">
                   <div className="text-[11px] text-slate-500 text-center mb-1.5 font-medium">
-                    ឬវាយបញ្ចូល Key ដោយដៃ (Manual Entry):
+                    Or enter setup key manually:
                   </div>
                   <div className="bg-white px-3.5 py-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 max-w-sm mx-auto shadow-xs hover:border-slate-300 transition-colors">
                     <div className="flex items-center gap-2 truncate">
@@ -263,7 +263,7 @@ export const SetupTwoFactorPage = () => {
                 onClick={handleGoToStep2}
                 className="w-full py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-[#2089C8]/25 cursor-pointer bg-gradient-to-r from-[#155e89] to-[#2089C8] hover:from-[#134d70] hover:to-[#1a77af] active:scale-[0.99] text-white border border-[#155e89]"
               >
-                <span>ខ្ញុំបាន Scan រួចរាល់ (Next: Enter 6-Digit Code)</span>
+                <span>I've scanned the QR code (Next: Enter 6-digit code)</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -281,7 +281,7 @@ export const SetupTwoFactorPage = () => {
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-[#2089C8] transition-colors cursor-pointer py-1 px-2 rounded-lg hover:bg-slate-50"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>ត្រឡប់ទៅមើល QR Code វិញ</span>
+                  <span>Back to QR Code</span>
                 </button>
 
                 <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#155e89] bg-sky-50 border border-sky-200 px-2.5 py-0.5 rounded-full font-bold">
@@ -300,7 +300,7 @@ export const SetupTwoFactorPage = () => {
                     Enter 6-Digit Verification Code
                   </h3>
                   <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
-                    សូមមើលលេខកូដ ៦ ខ្ទង់ក្នុង Authenticator App របស់អ្នក ហើយវាយបញ្ចូលខាងក្រោម
+                    Check your Authenticator App for the 6-digit code and enter it below:
                   </p>
                 </div>
 
@@ -346,11 +346,11 @@ export const SetupTwoFactorPage = () => {
                   {isSubmitting || loading ? (
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-100 text-[#155e89] text-xs font-bold animate-pulse">
                       <span className="w-3.5 h-3.5 border-2 border-[#2089C8] border-t-transparent rounded-full animate-spin" />
-                      <span>កំពុងផ្ទៀងផ្ទាត់ និងចូលប្រព័ន្ធដោយស្វ័យប្រវត្តិ...</span>
+                      <span>Verifying and signing you in automatically...</span>
                     </div>
                   ) : (
                     <span className="text-[11px] text-slate-400 font-medium">
-                      វាយគ្រប់ ៦ ខ្ទង់ វានឹង <strong className="text-slate-600">Auto Verify</strong> ចូលប្រព័ន្ធភ្លាមៗ
+                      Entering all 6 digits will automatically verify and sign you in.
                     </span>
                   )}
                 </div>
@@ -366,7 +366,7 @@ export const SetupTwoFactorPage = () => {
                 {loading || isSubmitting ? (
                   <span className="inline-flex items-center gap-2">
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>កំពុងផ្ទៀងផ្ទាត់លេខកូដ...</span>
+                    <span>Verifying passcode...</span>
                   </span>
                 ) : (
                   <>

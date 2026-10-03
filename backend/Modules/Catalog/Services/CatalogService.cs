@@ -19,12 +19,15 @@ public interface ICatalogService
     Task<IReadOnlyList<CategoryDto>> GetCategoriesAsync(bool onlyActive = true, CancellationToken cancellationToken = default);
     Task<CategoryDto> CreateCategoryAsync(CreateCategoryRequest request, CancellationToken cancellationToken = default);
     Task<CategoryDto?> UpdateCategoryAsync(int id, UpdateCategoryRequest request, CancellationToken cancellationToken = default);
+    Task<bool> DeleteCategoryAsync(int id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<BrandDto>> GetBrandsAsync(bool onlyActive = true, CancellationToken cancellationToken = default);
     Task<BrandDto> CreateBrandAsync(CreateBrandRequest request, CancellationToken cancellationToken = default);
+    Task<bool> DeleteBrandAsync(int id, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<UnitDto>> GetUnitsAsync(CancellationToken cancellationToken = default);
     Task<UnitDto> CreateUnitAsync(CreateUnitRequest request, CancellationToken cancellationToken = default);
+    Task<bool> DeleteUnitAsync(int id, CancellationToken cancellationToken = default);
 }
 
 public class CatalogService : ICatalogService
@@ -56,6 +59,10 @@ public class CatalogService : ICatalogService
         if (isActive.HasValue)
         {
             query = query.Where(i => i.IsActive == isActive.Value);
+        }
+        else
+        {
+            query = query.Where(i => i.IsActive);
         }
 
         if (categoryId.HasValue)
@@ -262,6 +269,15 @@ public class CatalogService : ICatalogService
         return new CategoryDto(cat.Id, cat.Name, cat.Description, cat.IsActive, cat.CreatedAtUtc);
     }
 
+    public async Task<bool> DeleteCategoryAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var cat = await _context.StockCategories.FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        if (cat == null) return false;
+        cat.IsActive = false;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<IReadOnlyList<BrandDto>> GetBrandsAsync(bool onlyActive = true, CancellationToken cancellationToken = default)
     {
         var query = _context.Brands.AsNoTracking();
@@ -284,6 +300,15 @@ public class CatalogService : ICatalogService
         return new BrandDto(brand.Id, brand.Name, brand.Description, brand.IsActive, brand.CreatedAtUtc);
     }
 
+    public async Task<bool> DeleteBrandAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var brand = await _context.Brands.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        if (brand == null) return false;
+        brand.IsActive = false;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<IReadOnlyList<UnitDto>> GetUnitsAsync(CancellationToken cancellationToken = default)
     {
         var units = await _context.UnitsOfMeasure.AsNoTracking().Where(u => u.IsActive).OrderBy(u => u.Code).ToListAsync(cancellationToken);
@@ -301,6 +326,15 @@ public class CatalogService : ICatalogService
         _context.UnitsOfMeasure.Add(unit);
         await _context.SaveChangesAsync(cancellationToken);
         return new UnitDto(unit.Id, unit.Code, unit.Name, unit.IsActive);
+    }
+
+    public async Task<bool> DeleteUnitAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var unit = await _context.UnitsOfMeasure.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+        if (unit == null) return false;
+        unit.IsActive = false;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     private static ProductDto MapToProductDto(StockItem i)

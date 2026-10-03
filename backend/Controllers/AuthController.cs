@@ -364,6 +364,7 @@ public class AuthController : ControllerBase
             id = user.Id,
             username = user.Username,
             email = user.Email,
+            twoFactorEnabled = user.TwoFactorEnabled,
             roles = roles,
             isAdmin = isRootAdmin,
             assignedWarehouses = userWarehouses,

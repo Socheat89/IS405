@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
+import { LanguageProvider } from './context/LanguageContext';
 
 // Navigation & Common Components
 import { Navbar } from './components/layout/Navbar';
@@ -142,10 +143,12 @@ const MainApp = () => {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <MainApp />
-      </AuthProvider>
-    </ToastProvider>
+    <LanguageProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <MainApp />
+        </AuthProvider>
+      </ToastProvider>
+    </LanguageProvider>
   );
 }

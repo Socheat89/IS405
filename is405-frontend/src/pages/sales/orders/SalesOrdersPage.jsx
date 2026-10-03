@@ -2,17 +2,21 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Tag, CheckCircle2, Truck, DollarSign, Plus, Clock, 
   ArrowUpRight, ShoppingBag, FileSpreadsheet, User, Calendar,
-  Sparkles, Check, ChevronRight, Edit2, Trash2
+  Sparkles, Check, ChevronRight, Edit2, Trash2, RotateCcw, Printer
 } from 'lucide-react';
 import { ControlPanel } from '../../../components/common/ControlPanel';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { ConfirmModal } from '../../../components/common/ConfirmModal';
+import { InvoiceModal } from '../../../components/common/InvoiceModal';
 import { salesService } from '../../../services/sales/salesService';
 import { SalesOrderModal as SalesModal } from './SalesOrderModal';
+import { SalesReturnModal } from '../returns/SalesReturnModal';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 
 export const SalesOrdersPage = () => {
   const { hasPermission } = useAuth();
+  const toast = useToast();
 
   const canCreate = hasPermission('sales-orders.create');
   const canConfirm = hasPermission('sales-orders.confirm');
@@ -31,11 +35,31 @@ export const SalesOrdersPage = () => {
   const [modalMode, setModalMode] = useState('create'); // 'create' | 'edit'
   const [selectedSO, setSelectedSO] = useState(null);
 
+  // Return Modal State
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [returnSO, setReturnSO] = useState(null);
+
+  // Print Invoice State
+  const [printInvoiceSO, setPrintInvoiceSO] = useState(null);
+
   // Delete Confirm State
   const [deleteConfirm, setDeleteConfirm] = useState({
     isOpen: false,
     so: null,
   });
+
+  const handlePrintInvoice = async (so) => {
+    try {
+      if (!so.items || so.items.length === 0) {
+        const full = await salesService.getSalesOrder(so.id);
+        setPrintInvoiceSO(full || so);
+      } else {
+        setPrintInvoiceSO(so);
+      }
+    } catch {
+      setPrintInvoiceSO(so);
+    }
+  };
 
   const fetchOrders = async () => {
     setLoading(true);
@@ -63,22 +87,49 @@ export const SalesOrdersPage = () => {
     setModalOpen(true);
   };
 
-  const handleEditSO = (so) => {
+  const handleEditSO = async (so) => {
     if (!canEdit) return;
-    setSelectedSO(so);
+    try {
+      if (!so.items || so.items.length === 0) {
+        const fullSO = await salesService.getSalesOrder(so.id);
+        setSelectedSO(fullSO || so);
+      } else {
+        setSelectedSO(so);
+      }
+    } catch (err) {
+      console.warn('Could not fetch full sales order, using summary:', err);
+      setSelectedSO(so);
+    }
     setModalMode('edit');
     setModalOpen(true);
   };
 
   const handleSaveSO = async (soData, soId) => {
-    if (modalMode === 'edit' && soId) {
-      if (!canEdit) return;
-      await salesService.updateSalesOrder(soId, soData);
-    } else {
-      if (!canCreate) return;
-      await salesService.createSalesOrder(soData);
+    try {
+      if (modalMode === 'edit' && soId) {
+        if (!canEdit) return;
+        await salesService.updateSalesOrder(soId, soData);
+        toast?.success?.('Sales order updated successfully');
+      } else {
+        if (!canCreate) return;
+        const res = await salesService.createSalesOrder(soData);
+        if (soData.autoConfirm) {
+          toast?.success?.(`Sale ${res?.invoiceNumber || ''} created & Stock OUT deducted successfully!`);
+        } else {
+          toast?.success?.(`Sales Quotation ${res?.invoiceNumber || ''} saved as draft`);
+        }
+      }
+      try {
+        await fetchOrders();
+      } catch (refreshErr) {
+        console.warn('Orders refresh notice:', refreshErr);
+      }
+    } catch (err) {
+      console.error('handleSaveSO error:', err);
+      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Error saving sales order';
+      toast?.error?.(msg);
+      throw err;
     }
-    await fetchOrders();
   };
 
   const handleDeleteSO = (so) => {
@@ -91,15 +142,27 @@ export const SalesOrdersPage = () => {
 
   const handleConfirmDelete = async () => {
     if (!deleteConfirm.so || !canDelete) return;
-    await salesService.deleteSalesOrder(deleteConfirm.so.id);
-    setDeleteConfirm({ isOpen: false, so: null });
-    await fetchOrders();
+    try {
+      await salesService.deleteSalesOrder(deleteConfirm.so.id);
+      toast?.success?.(`Sales order ${deleteConfirm.so.invoiceNumber || deleteConfirm.so.soNumber} deleted`);
+      setDeleteConfirm({ isOpen: false, so: null });
+      await fetchOrders();
+    } catch (err) {
+      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Error deleting sales order';
+      toast?.error?.(msg);
+    }
   };
 
   const handleStatusChange = async (soId, nextStatus) => {
     if (!canConfirm && !canPay) return;
-    await salesService.updateSalesStatus(soId, nextStatus);
-    await fetchOrders();
+    try {
+      await salesService.updateSalesStatus(soId, nextStatus);
+      toast?.success?.(`Sales order confirmed & Stock OUT deducted!`);
+      await fetchOrders();
+    } catch (err) {
+      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Error updating order status';
+      toast?.error?.(msg);
+    }
   };
 
   const metrics = useMemo(() => {
@@ -256,27 +319,39 @@ export const SalesOrdersPage = () => {
                       {(canConfirm || canEdit || canDelete) && (
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {canConfirm && so.status === 'QUOTATION' && (
+                            {canConfirm && (so.status === 'QUOTATION' || so.status === 'DRAFT') && (
                               <button
-                                onClick={() => handleStatusChange(so.id, 'SALES_ORDER')}
-                                className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-[#2089C8] border border-sky-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                title="Confirm Sales Order (Stock OUT)"
+                                onClick={() => handleStatusChange(so.id, 'CONFIRMED')}
+                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                title="Confirm & Dispatch (Performs Stock OUT)"
                               >
                                 <Check className="w-3.5 h-3.5" />
-                                <span>Confirm Order</span>
+                                <span>Confirm & Dispatch</span>
                               </button>
                             )}
 
-                            {canConfirm && so.status === 'SALES_ORDER' && (
+                            {(so.status === 'SALES_ORDER' || so.status === 'CONFIRMED' || so.status === 'DELIVERED') && (
                               <button
-                                onClick={() => handleStatusChange(so.id, 'DELIVERED')}
+                                onClick={() => {
+                                  setReturnSO(so);
+                                  setReturnModalOpen(true);
+                                }}
                                 className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                title="Mark as Delivered"
+                                title="Customer Product Return (Stock IN)"
                               >
-                                <Truck className="w-3.5 h-3.5" />
-                                <span>Mark Delivered</span>
+                                <RotateCcw className="w-3.5 h-3.5 text-teal-600" />
+                                <span>Return</span>
                               </button>
                             )}
+
+                            {/* Print / View Official Invoice Button */}
+                            <button
+                              onClick={() => handlePrintInvoice(so)}
+                              className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                              title="View & Print Official Invoice"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-emerald-600" />
+                            </button>
 
                             {canEdit && (
                               <button
@@ -340,6 +415,14 @@ export const SalesOrdersPage = () => {
                           <Edit2 className="w-3.5 h-3.5" /> Edit
                         </button>
                       )}
+                      <button
+                        onClick={() => handlePrintInvoice(so)}
+                        className="p-1 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                        title="Print Invoice"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-emerald-600" />
+                      </button>
+
                       {canDelete && (
                         <button
                           onClick={() => handleDeleteSO(so)}
@@ -375,6 +458,14 @@ export const SalesOrdersPage = () => {
         mode={modalMode}
       />
 
+      {/* Official Printable Invoice Modal */}
+      <InvoiceModal
+        isOpen={Boolean(printInvoiceSO)}
+        onClose={() => setPrintInvoiceSO(null)}
+        type="SALES_INVOICE"
+        data={printInvoiceSO}
+      />
+
       <ConfirmModal
         isOpen={deleteConfirm.isOpen}
         onClose={() => setDeleteConfirm({ isOpen: false, so: null })}
@@ -385,6 +476,17 @@ export const SalesOrdersPage = () => {
         requireConfirmText={deleteConfirm.so?.soNumber || deleteConfirm.so?.invoiceNumber}
         confirmText="Delete Order"
         type="danger"
+      />
+      {/* Sales Return Modal */}
+      <SalesReturnModal
+        isOpen={returnModalOpen}
+        onClose={() => {
+          setReturnModalOpen(false);
+          setReturnSO(null);
+        }}
+        onReturnCreated={fetchOrders}
+        initialSale={returnSO}
+        salesList={orders}
       />
     </div>
   );

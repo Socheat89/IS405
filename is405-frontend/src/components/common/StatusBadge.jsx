@@ -9,15 +9,16 @@ export const StatusBadge = ({ status, type = 'stock', size = 'sm' }) => {
     : 'text-[11px] px-2.5 py-0.5 gap-1.5';
 
   if (type === 'stock') {
-    switch (status) {
-      case 'IN_STOCK':
+    const s = (status || '').toUpperCase().replace(/_/g, '');
+    switch (s) {
+      case 'INSTOCK':
         return (
           <span className={`inline-flex items-center font-medium rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 shadow-xs ${sizeClasses}`}>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ring-2 ring-emerald-500/20"></span>
             <span>In Stock</span>
           </span>
         );
-      case 'LOW_STOCK':
+      case 'LOWSTOCK':
         return (
           <span className={`inline-flex items-center font-medium rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 shadow-xs ${sizeClasses}`}>
             <span className="relative flex h-1.5 w-1.5">
@@ -27,7 +28,7 @@ export const StatusBadge = ({ status, type = 'stock', size = 'sm' }) => {
             <span>Low Stock</span>
           </span>
         );
-      case 'OUT_OF_STOCK':
+      case 'OUTOFSTOCK':
         return (
           <span className={`inline-flex items-center font-medium rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20 shadow-xs ${sizeClasses}`}>
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>

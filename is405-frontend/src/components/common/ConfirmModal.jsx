@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trash2, AlertTriangle, AlertCircle, X, Loader2, ShieldAlert } from 'lucide-react';
+import { Trash2, AlertTriangle, AlertCircle, CheckCircle2, X, Loader2, ShieldAlert } from 'lucide-react';
 
 /**
  * ConfirmModal – Premium confirmation dialog.
@@ -133,7 +133,7 @@ export const ConfirmModal = ({
             ) : isWarning ? (
               <AlertTriangle className="w-6 h-6" />
             ) : (
-              <AlertCircle className="w-6 h-6" />
+              <CheckCircle2 className="w-6 h-6" />
             )}
           </div>
 
@@ -143,7 +143,7 @@ export const ConfirmModal = ({
 
             {itemName && (
               <div className="mt-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/90 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" />
+                <span className={`w-2 h-2 rounded-full shrink-0 ${isDanger ? 'bg-rose-500' : isWarning ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                 <span className="text-xs font-mono font-bold text-slate-800 truncate">{itemName}</span>
               </div>
             )}
@@ -224,7 +224,7 @@ export const ConfirmModal = ({
               ${canConfirm ? `${btnActive} cursor-pointer` : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'}`}
           >
             {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-            <span>{loading ? 'Deleting...' : confirmText}</span>
+            <span>{loading ? (isDanger ? 'Deleting...' : 'Processing...') : confirmText}</span>
           </button>
         </div>
       </div>

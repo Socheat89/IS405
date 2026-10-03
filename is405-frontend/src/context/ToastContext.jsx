@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { CheckCircle2, AlertTriangle, AlertCircle, Info, X, Sparkles } from 'lucide-react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { CheckCircle2, AlertTriangle, AlertCircle, Info, X } from 'lucide-react';
 
 const ToastContext = createContext(null);
 
@@ -11,45 +11,52 @@ export const ToastProvider = ({ children }) => {
   }, []);
 
   const addToast = useCallback(({ type = 'success', title, message, duration = 4000 }) => {
-    const id = Date.now() + Math.random().toString(36).substring(2, 9);
+    const id = `${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
     const newToast = { id, type, title, message, duration, createdAt: Date.now() };
-
     setToasts((prev) => [...prev, newToast]);
-
-    if (duration > 0) {
-      setTimeout(() => {
-        removeToast(id);
-      }, duration);
-    }
     return id;
-  }, [removeToast]);
+  }, []);
 
-  const success = useCallback((message, title = 'ជោគជ័យ (Saved Successfully)') => {
-    return addToast({ type: 'success', title, message });
-  }, [addToast]);
+  const success = useCallback((message, title = 'Success') => (
+    addToast({ type: 'success', title, message })
+  ), [addToast]);
 
-  const error = useCallback((message, title = 'បរាជ័យ (Error Occurred)') => {
-    return addToast({ type: 'error', title, message });
-  }, [addToast]);
+  const error = useCallback((message, title = 'Error') => (
+    addToast({ type: 'error', title, message })
+  ), [addToast]);
 
-  const warning = useCallback((message, title = 'ការព្រមាន (Warning)') => {
-    return addToast({ type: 'warning', title, message });
-  }, [addToast]);
+  const warning = useCallback((message, title = 'Warning') => (
+    addToast({ type: 'warning', title, message })
+  ), [addToast]);
 
-  const info = useCallback((message, title = 'ដំណឹង (Information)') => {
-    return addToast({ type: 'info', title, message });
-  }, [addToast]);
+  const info = useCallback((message, title = 'Information') => (
+    addToast({ type: 'info', title, message })
+  ), [addToast]);
 
-  // Global window listener for easy access
+  // Global window bridge for non-React call sites
   useEffect(() => {
-    window.toast = { success, error, warning, info, add: addToast, remove: removeToast };
+    const api = {
+      success, error, warning, info,
+      showSuccess: success, showError: error, showWarning: warning, showInfo: info,
+      add: addToast, addToast,
+      remove: removeToast, removeToast
+    };
+    window.toast = api;
+    return () => {
+      if (window.toast === api) delete window.toast;
+    };
   }, [success, error, warning, info, addToast, removeToast]);
 
-  return (
-    <ToastContext.Provider value={{ success, error, warning, info, addToast, removeToast }}>
-      {children}
+  const contextValue = {
+    success, error, warning, info,
+    showSuccess: success, showError: error, showWarning: warning, showInfo: info,
+    addToast, removeToast
+  };
 
-      {/* Floating Side-Slide Toast Container (Fixed to Top-Right) */}
+  return (
+    <ToastContext.Provider value={contextValue}>
+      {children}
+      {/* Floating Side-Slide Toast Container */}
       <div 
         aria-live="assertive" 
         className="fixed top-5 right-5 z-[9999] flex flex-col gap-3 max-w-sm sm:max-w-md w-full pointer-events-none p-2 sm:p-0"
@@ -62,63 +69,69 @@ export const ToastProvider = ({ children }) => {
   );
 };
 
+const TOAST_THEMES = {
+  success: {
+    bg: 'bg-white',
+    border: 'border-emerald-500/30 shadow-emerald-500/10',
+    icon: <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />,
+    accentColor: 'bg-emerald-500',
+    titleColor: 'text-emerald-950',
+    badge: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    badgeText: 'Saved'
+  },
+  error: {
+    bg: 'bg-white',
+    border: 'border-rose-500/30 shadow-rose-500/10',
+    icon: <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />,
+    accentColor: 'bg-rose-500',
+    titleColor: 'text-rose-950',
+    badge: 'bg-rose-100 text-rose-800 border-rose-300',
+    badgeText: 'Failed'
+  },
+  warning: {
+    bg: 'bg-white',
+    border: 'border-amber-500/30 shadow-amber-500/10',
+    icon: <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />,
+    accentColor: 'bg-amber-500',
+    titleColor: 'text-amber-950',
+    badge: 'bg-amber-100 text-amber-800 border-amber-300',
+    badgeText: 'Alert'
+  },
+  info: {
+    bg: 'bg-white',
+    border: 'border-[#2089C8]/30 shadow-[#2089C8]/10',
+    icon: <Info className="w-5 h-5 text-[#2089C8] shrink-0" />,
+    accentColor: 'bg-[#2089C8]',
+    titleColor: 'text-sky-950',
+    badge: 'bg-sky-100 text-[#155e89] border-sky-300',
+    badgeText: 'Notice'
+  }
+};
+
 const ToastItem = ({ toast, onClose }) => {
   const [isExiting, setIsExiting] = useState(false);
+  const closeTimerRef = useRef(null);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setIsExiting(true);
-    setTimeout(onClose, 250);
-  };
+    closeTimerRef.current = setTimeout(onClose, 250);
+  }, [onClose]);
 
-  const config = {
-    success: {
-      bg: 'bg-white',
-      border: 'border-emerald-500/30 shadow-emerald-500/10',
-      headerBg: 'bg-emerald-50',
-      icon: <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />,
-      accentColor: 'bg-emerald-500',
-      titleColor: 'text-emerald-950',
-      badge: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-      badgeText: 'Saved'
-    },
-    error: {
-      bg: 'bg-white',
-      border: 'border-rose-500/30 shadow-rose-500/10',
-      headerBg: 'bg-rose-50',
-      icon: <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />,
-      accentColor: 'bg-rose-500',
-      titleColor: 'text-rose-950',
-      badge: 'bg-rose-100 text-rose-800 border-rose-300',
-      badgeText: 'Failed'
-    },
-    warning: {
-      bg: 'bg-white',
-      border: 'border-amber-500/30 shadow-amber-500/10',
-      headerBg: 'bg-amber-50',
-      icon: <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />,
-      accentColor: 'bg-amber-500',
-      titleColor: 'text-amber-950',
-      badge: 'bg-amber-100 text-amber-800 border-amber-300',
-      badgeText: 'Alert'
-    },
-    info: {
-      bg: 'bg-white',
-      border: 'border-[#2089C8]/30 shadow-[#2089C8]/10',
-      headerBg: 'bg-sky-50',
-      icon: <Info className="w-5 h-5 text-[#2089C8] shrink-0" />,
-      accentColor: 'bg-[#2089C8]',
-      titleColor: 'text-sky-950',
-      badge: 'bg-sky-100 text-[#155e89] border-sky-300',
-      badgeText: 'Notice'
-    }
-  }[toast.type || 'success'];
+  useEffect(() => {
+    if (toast.duration <= 0) return;
+    const autoTimer = setTimeout(handleClose, toast.duration);
+    return () => {
+      clearTimeout(autoTimer);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, [toast.duration, handleClose]);
+
+  const config = TOAST_THEMES[toast.type] || TOAST_THEMES.success;
 
   return (
     <div
       className={`pointer-events-auto w-full rounded-2xl border ${config.border} ${config.bg} shadow-2xl backdrop-blur-xl overflow-hidden transition-all duration-300 transform ${
-        isExiting 
-          ? 'translate-x-full opacity-0 scale-95' 
-          : 'animate-slide-in-right'
+        isExiting ? 'translate-x-full opacity-0 scale-95' : 'animate-slide-in-right'
       }`}
       style={{
         animation: !isExiting ? 'slideInFromRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards' : undefined
@@ -173,14 +186,25 @@ const ToastItem = ({ toast, onClose }) => {
 export const useToast = () => {
   const context = useContext(ToastContext);
   if (!context) {
-    // Fallback if accessed outside provider
+    const forwardOrLog = (method, fallbackLog) => (msg, title) => 
+      window.toast?.[method]?.(msg, title) || fallbackLog('Toast:', msg);
+
+    const successFn = forwardOrLog('success', console.log);
+    const errorFn = forwardOrLog('error', console.error);
+    const warningFn = forwardOrLog('warning', console.warn);
+    const infoFn = forwardOrLog('info', console.info);
+
     return {
-      success: (msg, title) => window.toast?.success?.(msg, title) || console.log('Toast:', msg),
-      error: (msg, title) => window.toast?.error?.(msg, title) || console.error('Toast:', msg),
-      warning: (msg, title) => window.toast?.warning?.(msg, title) || console.warn('Toast:', msg),
-      info: (msg, title) => window.toast?.info?.(msg, title) || console.info('Toast:', msg),
-      addToast: () => {},
-      removeToast: () => {},
+      success: successFn,
+      error: errorFn,
+      warning: warningFn,
+      info: infoFn,
+      showSuccess: successFn,
+      showError: errorFn,
+      showWarning: warningFn,
+      showInfo: infoFn,
+      addToast: (options) => window.toast?.addToast?.(options) || window.toast?.add?.(options),
+      removeToast: (id) => window.toast?.removeToast?.(id) || window.toast?.remove?.(id),
     };
   }
   return context;

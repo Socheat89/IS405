@@ -2,7 +2,7 @@
 
 export const checkPasswordStrength = (password = '') => {
   const criteria = [
-    { id: 'length', label: 'At least 8 characters (យ៉ាងតិច ៨ តួ)', met: password.length >= 8 },
+    { id: 'length', label: 'At least 8 characters', met: password.length >= 8 },
     { id: 'upper', label: 'At least 1 uppercase letter (A-Z)', met: /[A-Z]/.test(password) },
     { id: 'lower', label: 'At least 1 lowercase letter (a-z)', met: /[a-z]/.test(password) },
     { id: 'digit', label: 'At least 1 numeric digit (0-9)', met: /[0-9]/.test(password) },
@@ -17,13 +17,13 @@ export const checkPasswordStrength = (password = '') => {
   let percentage = (metCount / criteria.length) * 100;
 
   if (metCount >= 5) {
-    strengthLabel = 'Strong (ខ្លាំង)';
+    strengthLabel = 'Strong';
     strengthColor = 'emerald';
   } else if (metCount >= 3) {
-    strengthLabel = 'Moderate (មធ្យម)';
+    strengthLabel = 'Moderate';
     strengthColor = 'amber';
   } else if (metCount >= 1) {
-    strengthLabel = 'Weak (ខ្សោយ)';
+    strengthLabel = 'Weak';
     strengthColor = 'rose';
   }
 

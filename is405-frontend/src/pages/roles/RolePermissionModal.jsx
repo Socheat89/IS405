@@ -6,9 +6,7 @@ import {
 import { permissionService } from '../../services/settings/permissionService';
 
 export const RolePermissionModal = ({ isOpen, onClose, role, onSave }) => {
-  if (!isOpen || !role) return null;
-
-  const [selectedPermIds, setSelectedPermIds] = useState(role.permissionIds || []);
+  const [selectedPermIds, setSelectedPermIds] = useState(role?.permissionIds || []);
   const [allPermissions, setAllPermissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -16,6 +14,7 @@ export const RolePermissionModal = ({ isOpen, onClose, role, onSave }) => {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    if (!isOpen || !role) return;
     let isMounted = true;
     async function load() {
       setLoading(true);
@@ -33,7 +32,7 @@ export const RolePermissionModal = ({ isOpen, onClose, role, onSave }) => {
   }, []);
 
   useEffect(() => {
-    setSelectedPermIds(role.permissionIds || []);
+    setSelectedPermIds(role?.permissionIds || []);
   }, [role]);
 
   // Group permissions
@@ -101,6 +100,8 @@ export const RolePermissionModal = ({ isOpen, onClose, role, onSave }) => {
       setSubmitting(false);
     }
   };
+
+  if (!isOpen || !role) return null;
 
   return (
     <div className="erp-modal-overlay animate-fade-in" onClick={onClose}>

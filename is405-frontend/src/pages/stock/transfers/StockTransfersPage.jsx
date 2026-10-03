@@ -2,16 +2,20 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   ArrowRightLeft, Plus, Search, Filter, RefreshCcw, CheckCircle2,
   XCircle, Clock, Building2, Package, Layers, FileText, ChevronRight,
-  AlertCircle, Check, Ban
+  AlertCircle, Check, Ban, Printer
 } from 'lucide-react';
 import { transferService } from '../../../services/stock/transferService';
 import { warehouseService } from '../../../services/stock/warehouseService';
 import { TransferModal } from './TransferModal';
+import { InvoiceModal } from '../../../components/common/InvoiceModal';
 import { ControlPanel } from '../../../components/common/ControlPanel';
+import { ConfirmModal } from '../../../components/common/ConfirmModal';
 import { useAuth } from '../../../context/AuthContext';
+import { useToast } from '../../../context/ToastContext';
 
 export const StockTransfersPage = () => {
   const { hasPermission, user } = useAuth();
+  const toast = useToast();
   const canCreate = user?.isAdmin || hasPermission('transfers.create');
 
   const [transfers, setTransfers] = useState([]);
@@ -22,8 +26,16 @@ export const StockTransfersPage = () => {
   const [warehouseFilter, setWarehouseFilter] = useState('ALL');
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [printTransferData, setPrintTransferData] = useState(null);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [feedbackMessage, setFeedbackMessage] = useState({ type: '', text: '' });
+
+  // Premium Confirm Modal State
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    action: null, // 'complete' | 'cancel'
+    transfer: null,
+  });
 
   const fetchTransfers = async () => {
     setLoading(true);
@@ -54,6 +66,7 @@ export const StockTransfersPage = () => {
 
   const handleCreateTransfer = async (transferData) => {
     await transferService.createTransfer(transferData);
+    toast.success('Stock transfer request created successfully!');
     setFeedbackMessage({
       type: 'success',
       text: 'Stock transfer initiated successfully!'
@@ -61,46 +74,50 @@ export const StockTransfersPage = () => {
     await fetchTransfers();
   };
 
-  const handleCompleteTransfer = async (id, transferNo) => {
-    if (!window.confirm(`Are you sure you want to COMPLETE transfer "${transferNo}"? This will immediately move stock from source to destination warehouse.`)) {
-      return;
-    }
-
-    setActionLoadingId(id);
-    try {
-      await transferService.completeTransfer(id);
-      setFeedbackMessage({
-        type: 'success',
-        text: `Transfer ${transferNo} completed successfully! Stock levels updated.`
-      });
-      await fetchTransfers();
-    } catch (err) {
-      setFeedbackMessage({
-        type: 'error',
-        text: typeof err === 'string' ? err : err?.message || 'Failed to complete transfer.'
-      });
-    } finally {
-      setActionLoadingId(null);
-    }
+  const handleOpenCompleteConfirm = (transfer) => {
+    setConfirmDialog({
+      isOpen: true,
+      action: 'complete',
+      transfer,
+    });
   };
 
-  const handleCancelTransfer = async (id, transferNo) => {
-    if (!window.confirm(`Are you sure you want to CANCEL transfer "${transferNo}"?`)) {
-      return;
-    }
+  const handleOpenCancelConfirm = (transfer) => {
+    setConfirmDialog({
+      isOpen: true,
+      action: 'cancel',
+      transfer,
+    });
+  };
+
+  const handleExecuteConfirmedAction = async () => {
+    if (!confirmDialog.transfer) return;
+    const { id, transferNo } = confirmDialog.transfer;
 
     setActionLoadingId(id);
     try {
-      await transferService.cancelTransfer(id);
-      setFeedbackMessage({
-        type: 'success',
-        text: `Transfer ${transferNo} cancelled.`
-      });
+      if (confirmDialog.action === 'complete') {
+        await transferService.completeTransfer(id);
+        toast.success(`Transfer "${transferNo}" completed successfully! Stock levels updated.`);
+        setFeedbackMessage({
+          type: 'success',
+          text: `Transfer ${transferNo} completed successfully! Stock levels updated.`
+        });
+      } else if (confirmDialog.action === 'cancel') {
+        await transferService.cancelTransfer(id);
+        toast.success(`Transfer "${transferNo}" cancelled successfully.`);
+        setFeedbackMessage({
+          type: 'success',
+          text: `Transfer ${transferNo} cancelled.`
+        });
+      }
       await fetchTransfers();
     } catch (err) {
+      const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Operation failed';
+      toast.error(msg);
       setFeedbackMessage({
         type: 'error',
-        text: typeof err === 'string' ? err : err?.message || 'Failed to cancel transfer.'
+        text: msg
       });
     } finally {
       setActionLoadingId(null);
@@ -336,31 +353,43 @@ export const StockTransfersPage = () => {
                         </td>
 
                         <td className="py-3.5 px-4 text-right">
-                          {isPending && (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => handleCompleteTransfer(transfer.id, transfer.transferNo)}
-                                disabled={actionLoadingId === transfer.id}
-                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
-                                title="Complete Transfer"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                Complete
-                              </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {/* View & Print Voucher */}
+                            <button
+                              onClick={() => setPrintTransferData({
+                                ...transfer,
+                                transferNumber: transfer.transferNo,
+                                items: transfer.items || []
+                              })}
+                              className="p-1.5 border border-slate-200 hover:bg-purple-50 hover:border-purple-200 text-purple-700 rounded-xl transition-all cursor-pointer"
+                              title="View & Print Transfer Voucher"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
 
-                              <button
-                                onClick={() => handleCancelTransfer(transfer.id, transfer.transferNo)}
-                                disabled={actionLoadingId === transfer.id}
-                                className="p-1.5 border border-slate-200 hover:bg-rose-50 hover:border-rose-200 text-rose-600 rounded-xl transition-all cursor-pointer"
-                                title="Cancel Transfer"
-                              >
-                                <Ban className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
-                          {!isPending && (
-                            <span className="text-[11px] text-slate-400 font-medium">Processed</span>
-                          )}
+                            {isPending && (
+                              <>
+                                <button
+                                  onClick={() => handleOpenCompleteConfirm(transfer)}
+                                  disabled={actionLoadingId === transfer.id}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                  title="Complete Transfer"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  Complete
+                                </button>
+
+                                <button
+                                  onClick={() => handleOpenCancelConfirm(transfer)}
+                                  disabled={actionLoadingId === transfer.id}
+                                  className="p-1.5 border border-slate-200 hover:bg-rose-50 hover:border-rose-200 text-rose-600 rounded-xl transition-all cursor-pointer"
+                                  title="Cancel Transfer"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -376,6 +405,31 @@ export const StockTransfersPage = () => {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         onTransferCreated={handleCreateTransfer}
+      />
+
+      {/* Official Printable Transfer Voucher */}
+      <InvoiceModal
+        isOpen={Boolean(printTransferData)}
+        onClose={() => setPrintTransferData(null)}
+        type="STOCK_TRANSFER"
+        data={printTransferData}
+      />
+
+      {/* Premium Confirmation Dialog */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog({ isOpen: false, action: null, transfer: null })}
+        onConfirm={handleExecuteConfirmedAction}
+        title={confirmDialog.action === 'complete' ? 'Complete Stock Transfer' : 'Cancel Stock Transfer'}
+        message={
+          confirmDialog.action === 'complete'
+            ? `Are you sure you want to complete this transfer? Stock will be immediately deducted from ${confirmDialog.transfer?.fromWarehouseName || 'Source'} and added to ${confirmDialog.transfer?.toWarehouseName || 'Destination'}.`
+            : `Are you sure you want to cancel transfer "${confirmDialog.transfer?.transferNo}"? This action cannot be undone.`
+        }
+        itemName={confirmDialog.transfer ? `${confirmDialog.transfer.transferNo} (${confirmDialog.transfer.fromWarehouseName || 'Source'} ➔ ${confirmDialog.transfer.toWarehouseName || 'Destination'})` : ''}
+        confirmText={confirmDialog.action === 'complete' ? 'Complete Transfer' : 'Cancel Transfer'}
+        cancelText="Close"
+        type={confirmDialog.action === 'complete' ? 'info' : 'danger'}
       />
     </div>
   );

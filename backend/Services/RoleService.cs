@@ -277,4 +277,32 @@ public class RoleService : IRoleService
         var updatedRole = await GetByIdAsync(role.Id, cancellationToken);
         return RoleServiceResult<RoleResponse>.Success(updatedRole!, statusCode: 200);
     }
+
+    public async Task<RoleServiceResult<bool>> DeleteAsync(
+        int id,
+        int actorUserId,
+        CancellationToken cancellationToken)
+    {
+        var role = await _context.Roles
+            .Include(r => r.UserRoles)
+            .Include(r => r.RolePermissions)
+            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+        if (role == null)
+        {
+            return RoleServiceResult<bool>.NotFound("Role was not found");
+        }
+
+        if (string.Equals(role.Code, "ADMIN", StringComparison.OrdinalIgnoreCase))
+        {
+            return RoleServiceResult<bool>.Conflict("The ADMIN role cannot be deleted.");
+        }
+
+        _context.UserRoles.RemoveRange(role.UserRoles);
+        _context.RolePermissions.RemoveRange(role.RolePermissions);
+        _context.Roles.Remove(role);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return RoleServiceResult<bool>.Success(true, 200);
+    }
 }
