@@ -465,3 +465,97 @@ input[type="checkbox"] { accent-color: var(--brand-600); cursor: pointer; }
 @media (max-width: 640px) {
   .erp-control-panel { padding: 0 1rem; }
 }
+
+/* ============================================================
+   ENTERPRISE PRINT STYLESHEET (A4 Corporate Standard)
+   ============================================================ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 12mm 10mm 12mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 10.5pt !important;
+    line-height: 1.35 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* When printing, hide all app UI like navbar, sidebars, alerts */
+  .print-hidden,
+  .print\:hidden,
+  nav,
+  aside,
+  header.app-header {
+    display: none !important;
+  }
+
+  /* Remove modal overlay backdrop, centering, and gray shadow on paper */
+  .invoice-modal-backdrop {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    z-index: auto !important;
+  }
+
+  .invoice-modal-card {
+    position: static !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  .invoice-printable-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  /* Prevent table rows and signature boxes from breaking awkwardly across pages */
+  table {
+    page-break-inside: auto !important;
+  }
+
+  tr, td, th {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Crisp table lines and dividers in print */
+  .print-border {
+    border-color: #94a3b8 !important;
+  }
+}
+
