@@ -471,14 +471,13 @@ input[type="checkbox"] { accent-color: var(--brand-600); cursor: pointer; }
    ============================================================ */
 @media print {
   @page {
-    size: A4 portrait;
     margin: 8mm 12mm 10mm 12mm;
   }
 
   html, body {
     background: #ffffff !important;
     color: #0f172a !important;
-    font-size: 10.5pt !important;
+    font-size: 11pt !important;
     line-height: 1.35 !important;
     margin: 0 !important;
     padding: 0 !important;
