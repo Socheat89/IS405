@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, Search, LayoutGrid, List, RefreshCw } from 'lucide-react';
+import { Plus, Search, LayoutGrid, List, RefreshCw, FileSpreadsheet } from 'lucide-react';
 
 export const ControlPanel = ({
   title,
@@ -15,10 +15,11 @@ export const ControlPanel = ({
   onStatusFilterChange,
   statusOptions = [],
   onRefresh,
-  loading = false
+  loading = false,
+  onExport
 }) => {
   return (
-    <div className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-0 sticky top-16 z-30 shadow-2xs">
+    <div className="erp-control-panel print:hidden bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-0 sticky top-16 z-30 shadow-2xs">
       <div className="w-full max-w-[1600px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3 py-3.5">
 
         {/* Left: Actions + Title */}
@@ -34,6 +35,12 @@ export const ControlPanel = ({
             <button onClick={onRefresh} disabled={loading}
               className="btn-icon" title="Refresh">
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#2089C8]' : ''}`} />
+            </button>
+          )}
+          {onExport && (
+            <button onClick={onExport} disabled={loading}
+              className="btn-icon text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700" title="Export to Excel">
+              <FileSpreadsheet className="w-4 h-4" />
             </button>
           )}
           {actions && actions}

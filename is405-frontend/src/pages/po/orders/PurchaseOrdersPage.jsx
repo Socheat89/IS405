@@ -11,6 +11,7 @@ import { PurchaseOrderModal as PurchaseModal } from './PurchaseOrderModal';
 import { GrnModal } from './GrnModal';
 import { PoApprovalModal } from './PoApprovalModal';
 import { useAuth } from '../../../context/AuthContext';
+import { useExport } from '../../../context/ExportContext';
 
 export const PurchaseOrdersPage = () => {
   const { hasPermission } = useAuth();
@@ -23,6 +24,7 @@ export const PurchaseOrdersPage = () => {
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { exportData } = useExport();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [viewMode, setViewMode] = useState('table');
@@ -216,9 +218,33 @@ export const PurchaseOrdersPage = () => {
         statusOptions={statusOptions}
         onRefresh={fetchOrders}
         loading={loading}
+        onExport={() => {
+          const dataToExport = filteredOrders.map(o => ({
+            poNumber: o.poNumber,
+            date: o.orderDate ? new Date(o.orderDate).toLocaleDateString() : 'N/A',
+            vendor: o.vendorName || 'N/A',
+            warehouse: o.warehouseName || 'Main Warehouse',
+            itemsCount: o.items ? o.items.length : 0,
+            totalQty: (o.items || []).reduce((sum, it) => sum + (Number(it.quantity) || 0), 0),
+            receivedQty: (o.items || []).reduce((sum, it) => sum + (Number(it.receivedQuantity) || 0), 0),
+            totalAmount: Number(o.totalAmount || 0).toFixed(2),
+            status: o.status || 'DRAFT'
+          }));
+          exportData(dataToExport, [
+            { header: 'PO #', key: 'poNumber' },
+            { header: 'Date', key: 'date' },
+            { header: 'Vendor', key: 'vendor' },
+            { header: 'Warehouse', key: 'warehouse' },
+            { header: 'Unique Items', key: 'itemsCount' },
+            { header: 'Total Ordered Qty', key: 'totalQty' },
+            { header: 'Total Received Qty', key: 'receivedQty' },
+            { header: 'Total Amount ($)', key: 'totalAmount' },
+            { header: 'Status', key: 'status' }
+          ], `Purchase_Orders_${new Date().toISOString().substring(0, 10)}.xlsx`);
+        }}
       />
 
-      <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6 print-hide-on-modal">
         {/* KPI Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="erp-card p-4 relative overflow-hidden flex items-center justify-between border-l-4 border-l-emerald-500">

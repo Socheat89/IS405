@@ -454,6 +454,9 @@ public static class DbSeeder
             try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"StockItems\" ADD COLUMN \"MaxStockLevel\" INTEGER NOT NULL DEFAULT 100;"); } catch { }
             try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"StockMovements\" ADD COLUMN \"ReferenceType\" TEXT NULL;"); } catch { }
             try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"StockMovements\" ADD COLUMN \"WarehouseId\" INTEGER NULL;"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD COLUMN \"ConfirmedByUserId\" INTEGER NULL;"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD COLUMN \"ConfirmedByUsername\" TEXT NULL;"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD COLUMN \"ConfirmedAtUtc\" TEXT NULL;"); } catch { }
         }
 
         var passwordHasher = new PasswordHasher<AppUser>();
@@ -635,6 +638,7 @@ public static class DbSeeder
             ("sales-orders", "pay", "Record payments for invoices"),
             ("sales-returns", "view", "View sales returns"),
             ("sales-returns", "create", "Process customer sales returns"),
+            ("sales-returns", "confirm", "Confirm customer returns & restock into warehouse"),
 
             // Warehouses & Transfers
             ("warehouses", "view", "View warehouse overview"),

@@ -467,11 +467,12 @@ input[type="checkbox"] { accent-color: var(--brand-600); cursor: pointer; }
 }
 
 /* ============================================================
-   ENTERPRISE PRINT STYLESHEET (A4 Corporate Standard)
+   ENTERPRISE PRINT STYLESHEET (A4 / A3 Corporate Standard)
    ============================================================ */
 @media print {
   @page {
     margin: 8mm 12mm 10mm 12mm;
+    size: auto;
   }
 
   html, body {
@@ -482,25 +483,45 @@ input[type="checkbox"] { accent-color: var(--brand-600); cursor: pointer; }
     margin: 0 !important;
     padding: 0 !important;
     width: 100% !important;
+    height: auto !important;
     overflow: visible !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
 
-  /* When printing, hide all app UI like navbar, sidebars, alerts */
+  /* 1. Hide non-printable app UI elements like navbar, sidebars, alerts, action buttons */
   .print-hidden,
   .print\:hidden,
+  header,
   nav,
   aside,
-  header.app-header {
+  .erp-navbar,
+  .erp-control-panel,
+  .module-tab-bar,
+  [data-no-print] {
     display: none !important;
   }
 
-  /* Remove modal overlay backdrop, centering, and gray shadow on paper */
-  .invoice-modal-backdrop {
+  /* 2. Hide background page layout when printing any modal / voucher */
+  body.printing-modal header,
+  body.printing-modal nav,
+  body.printing-modal aside,
+  body.printing-modal .erp-navbar,
+  body.printing-modal .erp-control-panel,
+  body.printing-modal .module-tab-bar,
+  body.printing-modal .print-hide-on-modal,
+  body.printing-modal #root > div > header,
+  body.printing-modal #root > div > main > div > div:not(:has(.invoice-modal-card)):not(:has(.item-ledger-modal-card)):not(:has([class*="modal-card"])) {
+    display: none !important;
+  }
+
+  /* 3. Remove modal backdrop, overlay styling, centering, and gray shadows on paper */
+  .invoice-modal-backdrop,
+  .item-ledger-modal-backdrop,
+  div[class*="backdrop"] {
     position: static !important;
     inset: auto !important;
-    background: transparent !important;
+    background: #ffffff !important;
     backdrop-filter: none !important;
     padding: 0 !important;
     margin: 0 !important;
@@ -510,9 +531,11 @@ input[type="checkbox"] { accent-color: var(--brand-600); cursor: pointer; }
     max-height: none !important;
     overflow: visible !important;
     z-index: auto !important;
+    box-shadow: none !important;
   }
 
-  .invoice-modal-card {
+  .invoice-modal-card,
+  .item-ledger-modal-card {
     position: static !important;
     border: none !important;
     border-radius: 0 !important;
@@ -537,9 +560,10 @@ input[type="checkbox"] { accent-color: var(--brand-600); cursor: pointer; }
     overflow: visible !important;
   }
 
-  /* Prevent table rows and signature boxes from breaking awkwardly across pages */
+  /* 4. Table and page break optimizations */
   table {
     page-break-inside: auto !important;
+    width: 100% !important;
   }
 
   tr, td, th {
@@ -552,9 +576,9 @@ input[type="checkbox"] { accent-color: var(--brand-600); cursor: pointer; }
     break-inside: avoid !important;
   }
 
-  /* Crisp table lines and dividers in print */
   .print-border {
     border-color: #94a3b8 !important;
   }
 }
+
 

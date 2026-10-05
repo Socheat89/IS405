@@ -813,11 +813,13 @@ public class InventoryService : IInventoryService
         if (warehouseId.HasValue)
         {
             var ws = await _context.WarehouseStocks.FirstOrDefaultAsync(s => s.WarehouseId == warehouseId.Value && s.ProductId == productId, cancellationToken);
-            if (ws != null)
+            if (ws == null || ws.QuantityOnHand < quantity)
             {
-                ws.QuantityOnHand = Math.Max(0, ws.QuantityOnHand - quantity);
-                ws.UpdatedAtUtc = DateTimeOffset.UtcNow;
+                var avail = ws?.QuantityOnHand ?? 0;
+                throw new InvalidOperationException($"Insufficient stock for '{product.Name}' in designated warehouse. Available: {avail}, Requested: {quantity}");
             }
+            ws.QuantityOnHand -= quantity;
+            ws.UpdatedAtUtc = DateTimeOffset.UtcNow;
         }
 
         await RecordMovementAsync(

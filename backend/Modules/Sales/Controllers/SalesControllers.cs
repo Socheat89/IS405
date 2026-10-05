@@ -116,6 +116,22 @@ public class SalesController : ControllerBase
         }
     }
 
+    [HttpPost("{id:int}/deliver")]
+    [HttpPost("{id:int}/dispatch")]
+    [ProducesResponseType(typeof(SalesOrderDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeliverSale(int id, [FromQuery] int? warehouseId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _salesService.DeliverSaleAsync(id, warehouseId, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpPost("{id:int}/cancel")]
     [ProducesResponseType(typeof(SalesOrderDto), StatusCodes.Status200OK)]
     public async Task<IActionResult> CancelSale(int id, [FromBody] CancelSaleRequest? req, CancellationToken cancellationToken)
@@ -202,13 +218,14 @@ public class SalesReturnsController : ControllerBase
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<SalesReturnDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetSalesReturns(
+        [FromQuery] string? status,
         [FromQuery] int? customerId,
         [FromQuery] int? saleId,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
-        var result = await _salesService.GetSalesReturnsAsync(customerId, saleId, page, pageSize, cancellationToken);
+        var result = await _salesService.GetSalesReturnsAsync(status, customerId, saleId, page, pageSize, cancellationToken);
         return Ok(result);
     }
 
@@ -230,6 +247,37 @@ public class SalesReturnsController : ControllerBase
         {
             var ret = await _salesService.ProcessSalesReturnAsync(request, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
             return CreatedAtAction(nameof(GetSalesReturn), new { id = ret.Id }, ret);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("{id:int}/confirm")]
+    [HttpPost("{id:int}/receive")]
+    [ProducesResponseType(typeof(SalesReturnDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ConfirmSalesReturn(int id, [FromQuery] int? warehouseId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _salesService.ConfirmSalesReturnAsync(id, warehouseId, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPost("{id:int}/cancel")]
+    [ProducesResponseType(typeof(SalesReturnDto), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CancelSalesReturn(int id, [FromBody] CancelSalesReturnRequest? req, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _salesService.CancelSalesReturnAsync(id, req?.Reason, GetCurrentUserId(), GetCurrentUsername(), cancellationToken);
+            return Ok(result);
         }
         catch (Exception ex)
         {

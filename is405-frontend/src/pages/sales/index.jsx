@@ -53,7 +53,7 @@ export const SalesModule = () => {
   return (
     <div className="min-h-full flex flex-col">
       {/* Module Tab Bar */}
-      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 pt-3">
+      <div className="module-tab-bar print:hidden bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 pt-3">
         <div className="flex items-center gap-1.5 w-full max-w-[1600px] mx-auto">
           {accessibleTabs.map((tab) => {
             const Icon = tab.icon;

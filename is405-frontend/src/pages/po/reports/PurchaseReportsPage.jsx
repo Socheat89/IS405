@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart3, DollarSign, ShoppingBag, Truck, Calendar, 
   Printer, RefreshCw, FileText, CheckCircle2, Clock, 
-  AlertCircle, Building2, Package, Sparkles, Filter
+  AlertCircle, Building2, Package, Sparkles, Filter, FileSpreadsheet
 } from 'lucide-react';
 import { purchaseService } from '../../../services/po/purchaseService';
 import { useToast } from '../../../context/ToastContext';
+import { useExport } from '../../../context/ExportContext';
 
 export const PurchaseReportsPage = () => {
   const [orders, setOrders] = useState([]);
@@ -13,6 +14,7 @@ export const PurchaseReportsPage = () => {
   const [timeFilter, setTimeFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const toast = useToast();
+  const { exportData } = useExport();
 
   const loadData = async () => {
     setLoading(true);
@@ -187,6 +189,29 @@ export const PurchaseReportsPage = () => {
               </button>
             ))}
           </div>
+
+          <button
+            onClick={() => {
+              const dataToExport = filteredOrders.map(o => ({
+                poNumber: o.poNumber,
+                orderDate: o.orderDate ? new Date(o.orderDate).toLocaleDateString() : 'N/A',
+                vendorName: o.vendorName || 'N/A',
+                totalAmount: Number(o.totalAmount || 0).toFixed(2),
+                status: o.status || 'DRAFT'
+              }));
+              exportData(dataToExport, [
+                { header: 'PO #', key: 'poNumber' },
+                { header: 'Order Date', key: 'orderDate' },
+                { header: 'Vendor Name', key: 'vendorName' },
+                { header: 'Total Amount ($)', key: 'totalAmount' },
+                { header: 'Status', key: 'status' }
+              ], `Purchase_Reports_${new Date().toISOString().substring(0, 10)}.xlsx`);
+            }}
+            className="px-3.5 py-1.5 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs print:hidden"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Export Data</span>
+          </button>
 
           <button
             onClick={() => window.print()}

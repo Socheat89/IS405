@@ -19,6 +19,8 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
   );
   const [items, setItems] = useState([]);
   const [stockCatalog, setStockCatalog] = useState([]);
+  const [warehouseStockMap, setWarehouseStockMap] = useState({});
+  const [loadingStocks, setLoadingStocks] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -59,20 +61,24 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
                 (it.productName && c.name?.toLowerCase() === it.productName?.toLowerCase())
               );
               return {
-                productId: it.productId || it.itemId || (matchedItem ? matchedItem.id : null),
-                productSku: it.productSku || it.sku || (matchedItem ? matchedItem.sku : ''),
-                itemName: it.productName || it.itemName || it.name || it.itemDescription || (matchedItem ? matchedItem.name : ''),
+                productId: it.productId || it.itemId || (matchedItem ? matchedItem.id : (catalog[0]?.id || null)),
+                productSku: it.productSku || it.sku || (matchedItem ? matchedItem.sku : (catalog[0]?.sku || '')),
+                itemName: it.productName || it.itemName || it.name || it.itemDescription || (matchedItem ? matchedItem.name : (catalog[0]?.name || '')),
                 quantity: it.quantity !== undefined ? it.quantity : 1,
                 unitPrice: it.unitPrice !== undefined ? it.unitPrice : (matchedItem ? Number(matchedItem.sellingPrice || matchedItem.unitPrice || 0) : 0),
-                isCustom: !matchedItem && !it.productId
+                isCustom: false
               };
             }));
+          } else if (catalog.length > 0) {
+            const first = catalog[0];
+            setItems([{ productId: first.id, productSku: first.sku, itemName: first.name, quantity: 1, unitPrice: Number(first.sellingPrice || 0), isCustom: false }]);
           } else {
-            setItems([{ productId: null, productSku: '', itemName: '', quantity: 1, unitPrice: '', isCustom: true }]);
+            setItems([]);
           }
         } else {
           setCustomerName('Angkor Tech Solutions');
-          setWarehouseId(whs.length > 0 ? whs[0].id : '');
+          const defaultWhId = whs.length > 0 ? whs[0].id : '';
+          setWarehouseId(defaultWhId);
           setDeliveryDate(new Date(Date.now() + 7 * 86400000).toISOString().substring(0, 10));
           if (catalog.length > 0) {
             const first = catalog[0];
@@ -80,12 +86,12 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
               productId: first.id,
               productSku: first.sku,
               itemName: first.name,
-              quantity: 2,
+              quantity: 1,
               unitPrice: Number(first.sellingPrice || first.unitPrice || first.costPrice || 0),
               isCustom: false
             }]);
           } else {
-            setItems([{ productId: null, productSku: '', itemName: 'MacBook Pro M3 Max 16"', quantity: 2, unitPrice: 2499.00, isCustom: true }]);
+            setItems([]);
           }
         }
       } catch (err) {
@@ -99,6 +105,39 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
     return () => { isMounted = false; };
   }, [initialSO, mode, isOpen]);
 
+  // Load live stock for selected warehouse
+  useEffect(() => {
+    if (!isOpen || !warehouseId) {
+      setWarehouseStockMap({});
+      return;
+    }
+    let isMounted = true;
+    const fetchWhStocks = async () => {
+      setLoadingStocks(true);
+      try {
+        const stocks = await warehouseService.getWarehouseStocks({ warehouseId: Number(warehouseId), pageSize: 1000 });
+        if (!isMounted) return;
+        const map = {};
+        if (Array.isArray(stocks)) {
+          stocks.forEach(s => {
+            const pId = s.productId || s.itemId;
+            if (pId) {
+              map[pId] = Number(s.quantityOnHand ?? s.quantity ?? 0);
+            }
+          });
+        }
+        setWarehouseStockMap(map);
+      } catch (err) {
+        console.warn('Failed to fetch warehouse stocks:', err);
+      } finally {
+        if (isMounted) setLoadingStocks(false);
+      }
+    };
+
+    fetchWhStocks();
+    return () => { isMounted = false; };
+  }, [warehouseId, isOpen]);
+
   const addItemRow = () => {
     if (stockCatalog.length > 0) {
       const first = stockCatalog[0];
@@ -111,14 +150,16 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
         isCustom: false
       }]);
     } else {
-      setItems(prev => [...prev, { productId: null, productSku: '', itemName: '', quantity: 1, unitPrice: '', isCustom: true }]);
+      setItems(prev => [...prev, { productId: null, productSku: '', itemName: '', quantity: 1, unitPrice: '', isCustom: false }]);
     }
   };
 
   const removeItemRow = (index) => {
     if (items.length <= 1) {
-      // Clear/reset the single line item to blank custom item
-      setItems([{ productId: null, productSku: '', itemName: '', quantity: 1, unitPrice: '', isCustom: true }]);
+      if (stockCatalog.length > 0) {
+        const first = stockCatalog[0];
+        setItems([{ productId: first.id, productSku: first.sku, itemName: first.name, quantity: 1, unitPrice: Number(first.sellingPrice || 0), isCustom: false }]);
+      }
       return;
     }
     setItems(prev => prev.filter((_, i) => i !== index));
@@ -181,14 +222,29 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
       return;
     }
 
+    if (!warehouseId) {
+      setError('Please select a designated warehouse to fulfill and dispatch this order.');
+      return;
+    }
+
+    const selectedWh = warehouses.find(w => String(w.id) === String(warehouseId));
+    const whName = selectedWh?.name || 'Selected Warehouse';
+
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (!item.itemName?.trim() && !item.productId) {
-        setError(`Please select or enter an item name for row #${i + 1}.`);
+      if (!item.productId) {
+        setError(`Please select a valid item from the catalog for row #${i + 1}.`);
         return;
       }
-      if ((Number(item.quantity) || 0) <= 0) {
+      const qty = Number(item.quantity) || 0;
+      if (qty <= 0) {
         setError(`Quantity for item #${i + 1} must be greater than 0.`);
+        return;
+      }
+
+      const avail = warehouseStockMap[item.productId] ?? 0;
+      if (autoConfirm && qty > avail) {
+        setError(`Cannot confirm order: Product "${item.itemName}" only has ${avail} available unit(s) in warehouse "${whName}", but ${qty} was requested. You cannot confirm an order without sufficient stock!`);
         return;
       }
     }
@@ -223,7 +279,7 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
         } else {
           const res = await salesService.createSalesOrder(payload);
           if (autoConfirm) {
-            toast?.success?.(`Sale ${res?.invoiceNumber || ''} created & Stock OUT deducted successfully!`);
+            toast?.success?.(`Sales order ${res?.invoiceNumber || ''} confirmed! Awaiting dispatch in Stock Module.`);
           } else {
             toast?.success?.(`Sales Quotation ${res?.invoiceNumber || ''} saved as draft`);
           }
@@ -367,36 +423,48 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
                   <div className="grid grid-cols-12 gap-2 items-center">
                     {/* Catalog Item / Description */}
                     <div className="col-span-12 sm:col-span-6">
-                      {!item.isCustom ? (
-                        <SearchableItemSelect
-                          items={stockCatalog}
-                          value={item.productId || ''}
-                          onChange={(val) => handleSelectCatalogItem(index, val)}
-                          allowCustom={true}
-                          priceField="sellingPrice"
-                          placeholder="Search by SKU or item name..."
-                        />
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="text"
-                            required
-                            value={item.itemName}
-                            onChange={(e) => updateItemRow(index, 'itemName', e.target.value)}
-                            placeholder="Item name or description..."
-                            className="w-full px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
-                          />
-                          {stockCatalog.length > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const first = stockCatalog[0];
-                                handleSelectCatalogItem(index, first.id);
-                              }}
-                              className="px-2 py-1.5 text-[10px] text-[#2089C8] bg-sky-50 border border-sky-200 rounded-lg whitespace-nowrap hover:bg-sky-100 cursor-pointer font-bold"
-                            >
-                              Catalog
-                            </button>
+                      <SearchableItemSelect
+                        items={stockCatalog}
+                        value={item.productId || ''}
+                        onChange={(val) => handleSelectCatalogItem(index, val)}
+                        allowCustom={false}
+                        priceField="sellingPrice"
+                        placeholder="Search by SKU or item name..."
+                      />
+
+                      {item.productId && (
+                        <div className="mt-1 flex items-center gap-1.5">
+                          {loadingStocks ? (
+                            <span className="text-[10px] text-slate-400 animate-pulse">Checking warehouse stock...</span>
+                          ) : (
+                            (() => {
+                              const avail = warehouseStockMap[item.productId] ?? 0;
+                              const requested = Number(item.quantity) || 0;
+                              const whObj = warehouses.find(w => String(w.id) === String(warehouseId));
+                              const whName = whObj?.name || 'Warehouse';
+                              if (avail <= 0) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                                    Out of stock (0 units in {whName})
+                                  </span>
+                                );
+                              }
+                              if (avail < requested) {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                    Low stock: only {avail} in {whName} (Order: {requested})
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                  In Stock: {avail} available in {whName}
+                                </span>
+                              );
+                            })()
                           )}
                         </div>
                       )}
@@ -507,17 +575,17 @@ export const SalesOrderModal = ({ isOpen, onClose, onSave, initialSO = null, mod
                   onClick={() => handleFormSubmit(true)}
                   disabled={submitting}
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors"
-                  title="Directly complete sale and deduct stock immediately (Stock OUT)"
+                  title="Validate stock and confirm sales order for warehouse dispatch"
                 >
                   {submitting ? (
                     <>
                       <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                      <span>Processing...</span>
+                      <span>Validating & Confirming...</span>
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      <span>Confirm & Sell (Stock OUT)</span>
+                      <span>Confirm Sales Order</span>
                     </>
                   )}
                 </button>

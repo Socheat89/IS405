@@ -72,12 +72,15 @@ public class SalesReturn
     public int? WarehouseId { get; set; }
     public Warehouse? Warehouse { get; set; }
     public DateTimeOffset ReturnDateUtc { get; set; } = DateTimeOffset.UtcNow;
-    public string Status { get; set; } = "COMPLETED"; // DRAFT, COMPLETED, CANCELLED
+    public string Status { get; set; } = "PENDING"; // PENDING, COMPLETED, CANCELLED
     public decimal RefundAmount { get; set; }
     public string? Reason { get; set; }
     public string? Notes { get; set; }
     public int? CreatedByUserId { get; set; }
     public string? CreatedByUsername { get; set; }
+    public int? ConfirmedByUserId { get; set; }
+    public string? ConfirmedByUsername { get; set; }
+    public DateTimeOffset? ConfirmedAtUtc { get; set; }
     public DateTimeOffset CreatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
     public ICollection<SalesReturnItem> Items { get; set; } = [];
 }

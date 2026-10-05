@@ -103,6 +103,8 @@ public record SalesReturnDto(
     string? Reason,
     string? Notes,
     string? CreatedByUsername,
+    string? ConfirmedByUsername,
+    DateTimeOffset? ConfirmedAtUtc,
     DateTimeOffset CreatedAtUtc,
     IReadOnlyList<SalesReturnItemDto> Items
 );
@@ -133,6 +135,9 @@ public record CreateSalesReturnItemRequest(
     string? Condition,
     string? Reason
 );
+
+public record ConfirmSalesReturnRequest(int? WarehouseId);
+public record CancelSalesReturnRequest(string? Reason);
 
 public record UpdateSaleRequest(
     int? CustomerId,

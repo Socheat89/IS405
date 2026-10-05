@@ -6,12 +6,14 @@ import {
 } from 'lucide-react';
 import { stockInService } from '../../../services/stock/stockInService';
 import { ControlPanel } from '../../../components/common/ControlPanel';
+import { useExport } from '../../../context/ExportContext';
 
 export const StockInPage = ({ onNavigateToPo }) => {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('ALL');
+  const { exportData } = useExport();
 
   const fetchRecords = async () => {
     setLoading(true);
@@ -59,6 +61,24 @@ export const StockInPage = ({ onNavigateToPo }) => {
         title="Stock In Ledger (PO Receipts)"
         subtitle="Inbound inventory receipts generated strictly from Purchase Orders (Goods Receipts)"
         onCreateNew={null} // No manual arbitrary creation in inventory
+        onExport={() => {
+          const dataToExport = filteredRecords.map(r => ({
+            receiptRef: r.referenceNo,
+            poRef: r.poNumber || 'N/A',
+            grnDate: r.createdAt ? new Date(r.createdAt).toLocaleDateString() : 'N/A',
+            destination: r.warehouse || 'N/A',
+            receivedBy: r.receivedBy || 'N/A',
+            notes: r.notes || ''
+          }));
+          exportData(dataToExport, [
+            { header: 'Receipt / GRN #', key: 'receiptRef' },
+            { header: 'PO Ref #', key: 'poRef' },
+            { header: 'Receipt Date', key: 'grnDate' },
+            { header: 'Destination Warehouse', key: 'destination' },
+            { header: 'Received By', key: 'receivedBy' },
+            { header: 'Notes', key: 'notes' }
+          ], `Stock_In_Ledger_${new Date().toISOString().substring(0, 10)}.xlsx`);
+        }}
       />
 
       <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6">

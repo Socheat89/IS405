@@ -246,11 +246,13 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                     ? (isKhmer ? 'ប័ណ្ណបញ្ជាទិញទំនិញ' : 'PURCHASE ORDER VOUCHER')
                     : type === 'SALES_RETURN'
                     ? (isKhmer ? 'ប័ណ្ណបង្វិលសងទំនិញ' : 'CUSTOMER SALES RETURN SLIP')
+                    : type === 'DELIVERY_NOTE'
+                    ? (isKhmer ? 'ប័ណ្ណប្រគល់ទំនិញ (DELIVERY NOTE)' : 'DELIVERY NOTE / PACKING SLIP')
                     : (isKhmer ? 'វិក្កយបត្រពាណិជ្ជកម្មផ្លូវការ' : 'COMMERCIAL TAX INVOICE')}
                 </h2>
                 <div className="text-xs text-slate-700 space-y-1 mt-1 font-medium">
                   <p className="font-mono">
-                    {isKhmer ? 'លេខកូដឯកសារ:' : 'Voucher No:'} <strong className="text-slate-900 font-extrabold text-sm">{docCode}</strong>
+                    {isKhmer ? 'លេខកូដឯកសារ:' : (type === 'DELIVERY_NOTE' ? 'DN Number:' : 'Voucher No:')} <strong className="text-slate-900 font-extrabold text-sm">{type === 'DELIVERY_NOTE' && !docCode.startsWith('DN-') ? `DN-${docCode}` : docCode}</strong>
                   </p>
                   <p>
                     {isKhmer ? 'កាលបរិច្ឆេទចេញ:' : 'Issue Date:'} <strong className="font-mono text-slate-900">{formatDate(docDate)}</strong>
@@ -346,8 +348,48 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                   <p className="text-xs text-slate-600">Payment Terms: <strong>{data.paymentTerms || 'Net 30 Days'}</strong></p>
                 </div>
               </div>
+            ) : type === 'DELIVERY_NOTE' ? (
+              /* --- 3. DELIVERY NOTE (DN) / PACKING SLIP DETAILS --- */
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-1">
+                {/* Dispatch Origin */}
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-300 print:bg-transparent print:border-slate-800 space-y-1.5">
+                  <div className="border-b border-slate-200 pb-1.5 flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-[#2089C8]" />
+                      <span>{isKhmer ? 'ឃ្លាំងប្រគល់ទំនិញ (DISPATCH ORIGIN)' : 'DISPATCH ORIGIN (WAREHOUSE)'}</span>
+                    </span>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 bg-white border border-slate-300 rounded text-slate-700">
+                      WH-{data.warehouseId || 1}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900">{data.warehouseName || 'Main Logistics Hub'}</h3>
+                  <p className="text-xs text-slate-600">
+                    Dispatched By: <strong className="text-slate-900 font-semibold">{data.createdByUsername || 'Warehouse Supervisor'}</strong>
+                  </p>
+                  <p className="text-xs text-slate-600 font-mono">
+                    Invoice Reference: <strong className="text-teal-700 font-bold">{data.invoiceNumber || data.soNumber || `#${data.id}`}</strong>
+                  </p>
+                </div>
+
+                {/* Delivery Destination */}
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-300 print:bg-transparent print:border-slate-800 space-y-1.5">
+                  <div className="border-b border-slate-200 pb-1.5">
+                    <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+                      <Truck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>{isKhmer ? 'អតិថិជនទទួល (CONSIGNEE / DELIVER TO)' : 'DELIVER TO (CUSTOMER)'}</span>
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-900">{data.customerName || 'Customer / Consignee'}</h3>
+                  <p className="text-xs text-slate-600">
+                    Contact: <strong className="text-slate-800">{data.customerPhone || 'Direct Handover'}</strong>
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    Delivery Mode: <strong className="text-emerald-700 font-semibold">Standard Road Delivery / Fleet</strong>
+                  </p>
+                </div>
+              </div>
             ) : (
-              /* --- 3. COMMERCIAL SALES INVOICE DETAILS --- */
+              /* --- 4. COMMERCIAL SALES INVOICE DETAILS --- */
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-1">
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-300 print:bg-transparent print:border-slate-800 space-y-1.5">
                   <div className="border-b border-slate-200 pb-1.5">
@@ -386,6 +428,7 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                     <QRCodeSVG 
                       value={`https://erp.mekongstock.com/verify?doc=${docCode}&amt=${grandTotal}`} 
                       size={54} 
+                      level="M"
                     />
                     <span className="text-[8px] font-mono text-slate-500 mt-1">Scan to Verify</span>
                   </div>
@@ -403,11 +446,13 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                   <span>
                     {type === 'STOCK_TRANSFER'
                       ? (isKhmer ? `មុខទំនិញត្រូវផ្ទេរ (${items.length} មុខ)` : `TRANSFERRED ITEMS MANIFEST (${items.length} SKUs)`)
+                      : type === 'DELIVERY_NOTE'
+                      ? (isKhmer ? `មុខទំនិញត្រូវដឹកជញ្ជូន (${items.length} មុខ)` : `DELIVERY ITEMS MANIFEST (${items.length} SKUs)`)
                       : (isKhmer ? `តារាងមុខទំនិញ (${items.length} មុខ)` : `ORDER LINE ITEMS (${items.length} SKUs)`)}
                   </span>
                 </h4>
                 <span className="text-xs font-mono font-bold text-slate-700">
-                  Total Physical Units: <span className="text-slate-900 font-black">{totalQuantity}</span>
+                  Total Dispatched Units: <span className="text-slate-900 font-black">{totalQuantity}</span>
                 </span>
               </div>
 
@@ -419,21 +464,21 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                       <th className="py-2.5 px-3">{isKhmer ? 'ឈ្មោះមុខទំនិញ / ការពិពណ៌នា' : 'Product Description & Specifications'}</th>
                       <th className="py-2.5 px-3 w-28 text-center">{isKhmer ? 'កូដទំនិញ' : 'SKU / Barcode'}</th>
                       <th className="py-2.5 px-3 w-24 text-center">{isKhmer ? 'ចំនួន' : 'Quantity'}</th>
-                      {type !== 'STOCK_TRANSFER' && (
+                      {type !== 'STOCK_TRANSFER' && type !== 'DELIVERY_NOTE' && (
                         <>
                           <th className="py-2.5 px-3 w-28 text-right">{isKhmer ? 'តម្លៃរាយ' : 'Unit Price'}</th>
                           <th className="py-2.5 px-3 w-28 text-right">{isKhmer ? 'សរុប' : 'Total Amount'}</th>
                         </>
                       )}
-                      {type === 'STOCK_TRANSFER' && (
-                        <th className="py-2.5 px-3 w-32 text-center">{isKhmer ? 'ស្ថានភាពត្រួតពិនិត្យ' : 'QC Inspection'}</th>
+                      {(type === 'STOCK_TRANSFER' || type === 'DELIVERY_NOTE') && (
+                        <th className="py-2.5 px-3 w-36 text-center">{isKhmer ? 'ស្ថានភាពត្រួតពិនិត្យ' : 'QC & Packaging'}</th>
                       )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 print:divide-slate-300">
                     {items.length === 0 ? (
                       <tr>
-                        <td colSpan={type === 'STOCK_TRANSFER' ? 5 : 6} className="py-6 text-center text-slate-400 text-xs italic">
+                        <td colSpan={type === 'STOCK_TRANSFER' || type === 'DELIVERY_NOTE' ? 5 : 6} className="py-6 text-center text-slate-400 text-xs italic">
                           {isKhmer ? 'គ្មានមុខទំនិញឡើយ' : 'No line item records registered in this document.'}
                         </td>
                       </tr>
@@ -455,7 +500,7 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                             <td className="py-2.5 px-3 text-center font-mono font-black text-slate-900 text-sm">
                               {qty} <span className="text-[10px] font-normal text-slate-500">{it.unit || 'PCS'}</span>
                             </td>
-                            {type !== 'STOCK_TRANSFER' && (
+                            {type !== 'STOCK_TRANSFER' && type !== 'DELIVERY_NOTE' && (
                               <>
                                 <td className="py-2.5 px-3 text-right font-mono text-slate-700">
                                   ${unitP.toFixed(2)}
@@ -465,10 +510,10 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                                 </td>
                               </>
                             )}
-                            {type === 'STOCK_TRANSFER' && (
+                            {(type === 'STOCK_TRANSFER' || type === 'DELIVERY_NOTE') && (
                               <td className="py-2.5 px-3 text-center">
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-md">
-                                  <CheckCircle2 className="w-3 h-3" /> Sealed &amp; Verified
+                                  <CheckCircle2 className="w-3 h-3" /> {type === 'DELIVERY_NOTE' ? 'Dispatched' : 'Sealed & Verified'}
                                 </span>
                               </td>
                             )}
@@ -490,26 +535,30 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                 <p className="font-bold text-slate-900 uppercase tracking-wider text-[10px]">
                   {type === 'STOCK_TRANSFER'
                     ? (isKhmer ? 'គោលការណ៍ត្រួតពិនិត្យ និងផ្ទេរទំនិញ:' : 'TRANSFER POLICIES & INSPECTION TERMS:')
+                    : type === 'DELIVERY_NOTE'
+                    ? (isKhmer ? 'សេចក្តីណែនាំដឹកជញ្ជូន & ប្រគល់ទំនិញ:' : 'DELIVERY & HANDOVER INSTRUCTIONS:')
                     : (isKhmer ? 'កំណត់សម្គាល់ & លក្ខខណ្ឌផ្លូវការ:' : 'OFFICIAL TERMS & WARRANTY CONDITIONS:')}
                 </p>
                 <p className="text-slate-600 leading-relaxed font-medium text-[11px]">
                   {data.notes || (type === 'STOCK_TRANSFER' 
                     ? '1. Goods listed above were physically inspected and dispatched from origin facility in sealed packaging. 2. Destination warehouse officer must count and confirm quantities before signing. 3. Report any discrepancy within 24 hours.'
+                    : type === 'DELIVERY_NOTE'
+                    ? '1. Please inspect all packages and cartons upon arrival. 2. Receiver signature acknowledges receipt in good condition and full quantity. 3. This document is an official non-priced delivery slip.'
                     : 'Goods sold are non-refundable unless authorized in writing. Please retain this invoice for official warranty, tax deductions, and verification.')}
                 </p>
                 <div className="flex items-center gap-1.5 text-[10px] text-emerald-700 font-bold pt-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Digitally Audited by MekongStock ERP Security Kernel</span>
+                  <span>Digitally Audited by MekongStock ERP Logistics Kernel</span>
                 </div>
               </div>
 
               {/* Right: Summary Metrics */}
-              {type === 'STOCK_TRANSFER' ? (
-                /* Stock Transfer Summary */
+              {type === 'STOCK_TRANSFER' || type === 'DELIVERY_NOTE' ? (
+                /* Logistics Transfer / Delivery Note Summary (NO PRICES) */
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-300 print:bg-transparent print:border-slate-800 space-y-2 text-xs flex flex-col justify-between">
                   <div>
                     <p className="font-bold text-slate-900 uppercase tracking-wider text-[10px] mb-2 border-b border-slate-200 pb-1">
-                      LOGISTICS TRANSFER RECONCILIATION
+                      {type === 'DELIVERY_NOTE' ? 'LOGISTICS DELIVERY RECONCILIATION' : 'LOGISTICS TRANSFER RECONCILIATION'}
                     </p>
                     <div className="space-y-1.5 text-slate-700 font-medium">
                       <div className="flex justify-between">
@@ -521,14 +570,14 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                         <strong className="font-mono text-slate-900">{totalQuantity} Units</strong>
                       </div>
                       <div className="flex justify-between">
-                        <span>Transport Route:</span>
-                        <strong className="text-slate-900">Dedicated Fleet Transport</strong>
+                        <span>Fulfillment Warehouse:</span>
+                        <strong className="text-slate-900">{data.warehouseName || 'Main Hub'}</strong>
                       </div>
                     </div>
                   </div>
 
                   <div className="pt-2 border-t-2 border-slate-800 flex items-center justify-between">
-                    <span className="font-bold text-slate-900">Transfer Fulfillment:</span>
+                    <span className="font-bold text-slate-900">{type === 'DELIVERY_NOTE' ? 'Delivery Dispatch:' : 'Transfer Fulfillment:'}</span>
                     <span className="font-black text-emerald-700 font-mono text-sm">{docStatus}</span>
                   </div>
                 </div>
@@ -598,6 +647,38 @@ export const InvoiceModal = ({ isOpen, onClose, type = 'SALES_INVOICE', data }) 
                     <div className="border-t border-dashed border-slate-400 pt-1 text-slate-600">
                       <p className="font-bold text-slate-900">{data.toWarehouseName || 'Destination Receiving Officer'}</p>
                       <p className="text-[10px]">Verified, Received &amp; Stamped</p>
+                    </div>
+                  </div>
+                </>
+              ) : type === 'DELIVERY_NOTE' ? (
+                <>
+                  <div className="space-y-14 p-3 bg-slate-50/50 rounded-xl border border-slate-200 print:bg-transparent print:border-slate-800">
+                    <p className="font-bold text-slate-800 uppercase tracking-wider text-[10px]">
+                      {isKhmer ? 'អ្នកប្រគល់ទំនិញ (Warehouse Dispatch)' : 'DISPATCHED BY (WAREHOUSE)'}
+                    </p>
+                    <div className="border-t border-dashed border-slate-400 pt-1 text-slate-600">
+                      <p className="font-bold text-slate-900">{data.createdByUsername || 'Warehouse Officer'}</p>
+                      <p className="text-[10px]">Signature &amp; Warehouse Stamp</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-14 p-3 bg-slate-50/50 rounded-xl border border-slate-200 print:bg-transparent print:border-slate-800">
+                    <p className="font-bold text-slate-800 uppercase tracking-wider text-[10px]">
+                      {isKhmer ? 'អ្នកដឹកជញ្ជូន (Carrier / Driver)' : 'DELIVERED BY (DRIVER / CARRIER)'}
+                    </p>
+                    <div className="border-t border-dashed border-slate-400 pt-1 text-slate-600">
+                      <p className="font-bold text-slate-900">Delivery Driver</p>
+                      <p className="text-[10px]">Signature &amp; Handover Date</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-14 p-3 bg-slate-50/50 rounded-xl border border-slate-200 print:bg-transparent print:border-slate-800">
+                    <p className="font-bold text-slate-800 uppercase tracking-wider text-[10px]">
+                      {isKhmer ? 'អតិថិជនទទួលទំនិញ (Received By)' : 'RECEIVED & ACCEPTED BY'}
+                    </p>
+                    <div className="border-t border-dashed border-slate-400 pt-1 text-slate-600">
+                      <p className="font-bold text-slate-900">{data.customerName || 'Customer Representative'}</p>
+                      <p className="text-[10px]">Received in Good Order (No Claims)</p>
                     </div>
                   </div>
                 </>

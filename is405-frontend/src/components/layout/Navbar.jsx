@@ -21,7 +21,7 @@ export const Navbar = ({ activeApp, setActiveApp, onOpenLauncher }) => {
   }[activeApp] ?? 'Dashboard';
 
   return (
-    <header className="erp-navbar px-4 sm:px-6 lg:px-8 flex items-center justify-between select-none">
+    <header className="erp-navbar print:hidden px-4 sm:px-6 lg:px-8 flex items-center justify-between select-none">
       {/* Left: Launcher + Brand */}
       <div className="flex items-center gap-3">
         {/* App Grid Launcher */}

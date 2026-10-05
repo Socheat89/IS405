@@ -37,6 +37,8 @@ const FALLBACK_PERMISSIONS = [
   { id: 44, pageCode: 'sales-orders', pageName: 'Sales Orders', code: 'sales-orders.cancel', action: 'cancel', description: 'Cancel sales orders' },
   { id: 45, pageCode: 'sales-orders', pageName: 'Sales Orders', code: 'sales-orders.pay', action: 'pay', description: 'Record payments for invoices' },
   { id: 46, pageCode: 'sales-returns', pageName: 'Sales Returns', code: 'sales-returns.view', action: 'view', description: 'View customer returns' },
+  { id: 47, pageCode: 'sales-returns', pageName: 'Sales Returns', code: 'sales-returns.create', action: 'create', description: 'Create customer return requests' },
+  { id: 62, pageCode: 'sales-returns', pageName: 'Sales Returns', code: 'sales-returns.confirm', action: 'confirm', description: 'Confirm customer returns & restock warehouse' },
 
   // Warehouses
   { id: 48, pageCode: 'warehouses', pageName: 'Warehouses', code: 'warehouses.view', action: 'view', description: 'View warehouse overview' },

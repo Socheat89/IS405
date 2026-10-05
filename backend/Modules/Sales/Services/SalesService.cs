@@ -19,6 +19,7 @@ public interface ISalesService
     Task<SalesOrderDto> UpdateSaleAsync(int id, UpdateSaleRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<SalesOrderDto> UpdateSaleStatusAsync(int id, string nextStatus, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<SalesOrderDto> ConfirmSaleAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<SalesOrderDto> DeliverSaleAsync(int id, int? warehouseId, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<SalesOrderDto> CancelSaleAsync(int id, string? reason, int? userId, string? username, CancellationToken cancellationToken = default);
     Task<bool> DeleteSaleAsync(int id, int? userId, string? username, CancellationToken cancellationToken = default);
 
@@ -27,9 +28,11 @@ public interface ISalesService
     Task<IReadOnlyList<SalePaymentDto>> GetPaymentsAsync(int saleId, CancellationToken cancellationToken = default);
 
     // Sales Returns
-    Task<PagedResult<SalesReturnDto>> GetSalesReturnsAsync(int? customerId, int? saleId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
+    Task<PagedResult<SalesReturnDto>> GetSalesReturnsAsync(string? status, int? customerId, int? saleId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default);
     Task<SalesReturnDto?> GetSalesReturnByIdAsync(int id, CancellationToken cancellationToken = default);
     Task<SalesReturnDto> ProcessSalesReturnAsync(CreateSalesReturnRequest request, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<SalesReturnDto> ConfirmSalesReturnAsync(int id, int? warehouseId, int? userId, string? username, CancellationToken cancellationToken = default);
+    Task<SalesReturnDto> CancelSalesReturnAsync(int id, string? reason, int? userId, string? username, CancellationToken cancellationToken = default);
 }
 
 public class SalesService : ISalesService
@@ -67,7 +70,23 @@ public class SalesService : ISalesService
 
         if (!string.IsNullOrWhiteSpace(status) && !status.Equals("ALL", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(s => s.Status == status.ToUpperInvariant());
+            var st = status.Trim().ToUpperInvariant();
+            if (st == "CONFIRMED" || st == "SALES_ORDER")
+            {
+                query = query.Where(s => s.Status == "CONFIRMED" || s.Status == "SALES_ORDER");
+            }
+            else if (st == "QUOTATION" || st == "DRAFT" || st == "PENDING")
+            {
+                query = query.Where(s => s.Status == "QUOTATION" || s.Status == "DRAFT" || s.Status == "PENDING");
+            }
+            else if (st == "DELIVERED" || st == "COMPLETED")
+            {
+                query = query.Where(s => s.Status == "DELIVERED" || s.Status == "COMPLETED");
+            }
+            else
+            {
+                query = query.Where(s => s.Status == st);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(paymentStatus) && !paymentStatus.Equals("ALL", StringComparison.OrdinalIgnoreCase))
@@ -165,9 +184,18 @@ public class SalesService : ISalesService
         }
 
         var warehouseId = request.WarehouseId;
-        if (!warehouseId.HasValue)
+        if (!warehouseId.HasValue || warehouseId.Value <= 0)
         {
             warehouseId = await _context.Warehouses.Where(w => w.IsActive).Select(w => (int?)w.Id).FirstOrDefaultAsync(cancellationToken);
+        }
+        if (!warehouseId.HasValue)
+        {
+            throw new InvalidOperationException("Please select a valid warehouse for this sales order.");
+        }
+        var warehouse = await _context.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value, cancellationToken);
+        if (warehouse == null)
+        {
+            throw new InvalidOperationException($"Selected warehouse #{warehouseId.Value} does not exist.");
         }
 
         var invoiceNo = $"INV-{DateTimeOffset.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..4].ToUpperInvariant()}";
@@ -197,46 +225,32 @@ public class SalesService : ISalesService
             {
                 product = await _context.StockItems.FirstOrDefaultAsync(p => p.Id == item.ProductId.Value, cancellationToken);
             }
-
-            var itemName = item.ItemName?.Trim() ?? item.ProductName?.Trim() ?? item.ProductSku?.Trim();
+            if (product == null && !string.IsNullOrWhiteSpace(item.ProductSku))
+            {
+                product = await _context.StockItems.FirstOrDefaultAsync(p => p.Sku.ToLower() == item.ProductSku.Trim().ToLower(), cancellationToken);
+            }
+            var itemName = item.ItemName?.Trim() ?? item.ProductName?.Trim();
             if (product == null && !string.IsNullOrWhiteSpace(itemName))
             {
-                product = await _context.StockItems.FirstOrDefaultAsync(p => p.Name.ToLower() == itemName.ToLower() || p.Sku.ToLower() == itemName.ToLower(), cancellationToken);
-                if (product == null)
-                {
-                    var unitPrice = item.UnitPrice > 0 ? item.UnitPrice : (item.UnitCost ?? 0);
-                    var sku = !string.IsNullOrWhiteSpace(item.ProductSku) ? item.ProductSku.Trim().ToUpper() : $"SKU-{Guid.NewGuid().ToString("N")[..6].ToUpperInvariant()}";
-                    product = new StockItem
-                    {
-                        Sku = sku,
-                        Name = itemName,
-                        Unit = "PCS",
-                        CostPrice = unitPrice * 0.7m,
-                        SellingPrice = unitPrice,
-                        QuantityOnHand = 100,
-                        MinStockLevel = 5,
-                        IsActive = true,
-                        CreatedAtUtc = DateTimeOffset.UtcNow
-                    };
-                    _context.StockItems.Add(product);
-                    await _context.SaveChangesAsync(cancellationToken);
-                }
+                product = await _context.StockItems.FirstOrDefaultAsync(p => p.Name.ToLower() == itemName.ToLower(), cancellationToken);
             }
 
             if (product == null)
             {
-                product = await _context.StockItems.FirstOrDefaultAsync(cancellationToken);
-                if (product == null) throw new InvalidOperationException("No product available for sale.");
+                throw new InvalidOperationException($"Product '{itemName ?? item.ProductSku ?? "N/A"}' was not found in stock catalog. All sale items must be selected from active stock.");
+            }
+
+            // RULE: Validate stock in the specified warehouse
+            var ws = await _context.WarehouseStocks
+                .FirstOrDefaultAsync(s => s.WarehouseId == warehouseId.Value && s.ProductId == product.Id, cancellationToken);
+            var availableInWh = ws?.QuantityOnHand ?? 0;
+
+            if (availableInWh < item.Quantity)
+            {
+                throw new InvalidOperationException($"Insufficient stock for '{product.Name}' in '{warehouse.Name}'. Available in warehouse: {availableInWh}, Requested: {item.Quantity}. Please adjust quantity or select another warehouse.");
             }
 
             var unitPriceEffective = item.UnitPrice > 0 ? item.UnitPrice : (product.SellingPrice > 0 ? product.SellingPrice : (item.UnitCost ?? 0));
-
-            // RULE 4: Sale Quantity > Available Stock -> Reject!
-            if (request.AutoConfirm && product.QuantityOnHand < item.Quantity)
-            {
-                throw new InvalidOperationException($"Insufficient stock for '{product.Name}'. Available: {product.QuantityOnHand}, Requested: {item.Quantity}");
-            }
-
             var lineSubtotal = (item.Quantity * unitPriceEffective) - item.Discount + item.Tax;
             subtotal += lineSubtotal;
 
@@ -257,28 +271,6 @@ public class SalesService : ISalesService
 
         _context.SalesOrders.Add(sale);
         await _context.SaveChangesAsync(cancellationToken);
-
-        // RULE 3: Sale Confirmed -> Stock OUT!
-        if (request.AutoConfirm)
-        {
-            foreach (var item in sale.Items)
-            {
-                await _inventoryService.DecreaseStockAsync(
-                    productId: item.ProductId,
-                    warehouseId: sale.WarehouseId,
-                    quantity: item.Quantity,
-                    unitPrice: item.UnitPrice,
-                    referenceType: "SALE",
-                    referenceNo: sale.InvoiceNumber,
-                    reason: $"Sale Order #{sale.InvoiceNumber}",
-                    supplierOrRecipient: customer.Name,
-                    notes: sale.Notes,
-                    userId: userId,
-                    username: username,
-                    cancellationToken: cancellationToken
-                );
-            }
-        }
 
         // Process initial payment if provided (Rule 12)
         if (request.InitialPayment != null && request.InitialPayment.Amount > 0)
@@ -397,20 +389,13 @@ public class SalesService : ISalesService
     public async Task<SalesOrderDto> UpdateSaleStatusAsync(int id, string nextStatus, int? userId, string? username, CancellationToken cancellationToken = default)
     {
         var normalized = nextStatus.Trim().ToUpperInvariant();
-        if (normalized == "CONFIRMED" || normalized == "SALES_ORDER" || normalized == "DELIVERED")
+        if (normalized == "CONFIRMED" || normalized == "SALES_ORDER")
         {
-            var sale = await _context.SalesOrders.FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
-            if (sale != null && sale.Status != "CONFIRMED" && sale.Status != "DELIVERED")
-            {
-                return await ConfirmSaleAsync(id, userId, username, cancellationToken);
-            }
-            if (sale != null)
-            {
-                sale.Status = normalized == "DELIVERED" ? "DELIVERED" : "CONFIRMED";
-                sale.UpdatedAtUtc = DateTimeOffset.UtcNow;
-                await _context.SaveChangesAsync(cancellationToken);
-                return (await GetSaleByIdAsync(id, cancellationToken))!;
-            }
+            return await ConfirmSaleAsync(id, userId, username, cancellationToken);
+        }
+        else if (normalized == "DELIVERED")
+        {
+            return await DeliverSaleAsync(id, null, userId, username, cancellationToken);
         }
         else if (normalized == "CANCELLED")
         {
@@ -429,6 +414,7 @@ public class SalesService : ISalesService
     {
         var sale = await _context.SalesOrders
             .Include(s => s.Customer)
+            .Include(s => s.Warehouse)
             .Include(s => s.Items)
             .ThenInclude(i => i.Product)
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
@@ -440,31 +426,93 @@ public class SalesService : ISalesService
         }
 
         var warehouseId = sale.WarehouseId ?? await _context.Warehouses.Where(w => w.IsActive).Select(w => (int?)w.Id).FirstOrDefaultAsync(cancellationToken);
+        if (!warehouseId.HasValue)
+        {
+            throw new InvalidOperationException("Sales order must have a designated warehouse before confirming.");
+        }
         sale.WarehouseId = warehouseId;
+        var wh = sale.Warehouse ?? await _context.Warehouses.FirstOrDefaultAsync(w => w.Id == warehouseId.Value, cancellationToken);
 
-        // RULE 4: Validate stock
+        // RULE: Validate stock in the designated warehouse
         foreach (var item in sale.Items)
         {
             var p = item.Product ?? await _context.StockItems.FirstAsync(x => x.Id == item.ProductId, cancellationToken);
-            if (p.QuantityOnHand < item.Quantity)
+            var ws = await _context.WarehouseStocks
+                .FirstOrDefaultAsync(s => s.WarehouseId == warehouseId.Value && s.ProductId == item.ProductId, cancellationToken);
+            var available = ws?.QuantityOnHand ?? 0;
+            if (available < item.Quantity)
             {
-                throw new InvalidOperationException($"Insufficient stock for '{p.Name}'. Available: {p.QuantityOnHand}, Requested: {item.Quantity}");
+                throw new InvalidOperationException($"Insufficient stock for '{p.Name}' in '{wh?.Name ?? "Selected Warehouse"}'. Available in warehouse: {available}, Requested: {item.Quantity}.");
+            }
+        }
+
+        // Set status to CONFIRMED (Awaiting warehouse delivery)
+        sale.Status = "CONFIRMED";
+        sale.UpdatedAtUtc = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync("CONFIRM", "SalesOrder", sale.Id.ToString(), $"Confirmed sales order {sale.InvoiceNumber} for {sale.Customer?.Name} (Ready for warehouse delivery from {wh?.Name})", userId: userId, username: username, cancellationToken: cancellationToken);
+
+        return (await GetSaleByIdAsync(sale.Id, cancellationToken))!;
+    }
+
+    public async Task<SalesOrderDto> DeliverSaleAsync(int id, int? warehouseId, int? userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var sale = await _context.SalesOrders
+            .Include(s => s.Customer)
+            .Include(s => s.Warehouse)
+            .Include(s => s.Items)
+            .ThenInclude(i => i.Product)
+            .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
+
+        if (sale == null) throw new KeyNotFoundException($"Sales order with ID {id} not found.");
+        if (sale.Status == "DELIVERED")
+        {
+            throw new InvalidOperationException($"Sales order {sale.InvoiceNumber} has already been delivered and stock deducted.");
+        }
+        if (sale.Status != "CONFIRMED" && sale.Status != "SALES_ORDER")
+        {
+            throw new InvalidOperationException($"Cannot deliver sales order in '{sale.Status}' status. Order must be CONFIRMED before warehouse dispatch.");
+        }
+
+        var targetWarehouseId = warehouseId ?? sale.WarehouseId;
+        if (!targetWarehouseId.HasValue)
+        {
+            targetWarehouseId = await _context.Warehouses.Where(w => w.IsActive).Select(w => (int?)w.Id).FirstOrDefaultAsync(cancellationToken);
+            if (!targetWarehouseId.HasValue)
+            {
+                throw new InvalidOperationException("Please select an active warehouse to dispatch from.");
+            }
+        }
+        sale.WarehouseId = targetWarehouseId;
+        var wh = await _context.Warehouses.FirstOrDefaultAsync(w => w.Id == targetWarehouseId.Value, cancellationToken);
+
+        // 1. Verify stock in the warehouse
+        foreach (var item in sale.Items)
+        {
+            var p = item.Product ?? await _context.StockItems.FirstAsync(x => x.Id == item.ProductId, cancellationToken);
+            var ws = await _context.WarehouseStocks
+                .FirstOrDefaultAsync(s => s.WarehouseId == targetWarehouseId.Value && s.ProductId == item.ProductId, cancellationToken);
+            var available = ws?.QuantityOnHand ?? 0;
+            if (available < item.Quantity)
+            {
+                throw new InvalidOperationException($"Cannot dispatch: Insufficient stock for '{p.Name}' in '{wh?.Name ?? "Warehouse"}'. Available: {available}, Required: {item.Quantity}.");
             }
         }
 
         using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
-        // RULE 3: Deduct stock
+        // 2. Physical Stock OUT from the warehouse
         foreach (var item in sale.Items)
         {
             await _inventoryService.DecreaseStockAsync(
                 productId: item.ProductId,
-                warehouseId: sale.WarehouseId,
+                warehouseId: targetWarehouseId.Value,
                 quantity: item.Quantity,
                 unitPrice: item.UnitPrice,
                 referenceType: "SALE",
                 referenceNo: sale.InvoiceNumber,
-                reason: $"Sale Order #{sale.InvoiceNumber}",
+                reason: $"Warehouse Dispatch: Delivered from {wh?.Name ?? "Warehouse"} for Sale #{sale.InvoiceNumber}",
                 supplierOrRecipient: sale.Customer?.Name ?? "Customer",
                 notes: sale.Notes,
                 userId: userId,
@@ -473,12 +521,12 @@ public class SalesService : ISalesService
             );
         }
 
-        sale.Status = "CONFIRMED";
+        sale.Status = "DELIVERED";
         sale.UpdatedAtUtc = DateTimeOffset.UtcNow;
         await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        await _auditService.LogAsync("CONFIRM", "SalesOrder", sale.Id.ToString(), $"Confirmed sale {sale.InvoiceNumber}", userId: userId, username: username, cancellationToken: cancellationToken);
+        await _auditService.LogAsync("DELIVER", "SalesOrder", sale.Id.ToString(), $"Dispatched and delivered sales order {sale.InvoiceNumber} from {wh?.Name ?? "Warehouse"} (Physical Stock OUT completed)", userId: userId, username: username, cancellationToken: cancellationToken);
 
         return (await GetSaleByIdAsync(sale.Id, cancellationToken))!;
     }
@@ -496,8 +544,8 @@ public class SalesService : ISalesService
 
         using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
-        // RULE 5: Cancelled Sale -> Reverse Stock (Stock IN)!
-        if (sale.Status == "CONFIRMED" || sale.Status == "DELIVERED")
+        // RULE 5: Cancelled Sale -> Reverse Stock ONLY if it was previously delivered/deducted!
+        if (sale.Status == "DELIVERED")
         {
             foreach (var item in sale.Items)
             {
@@ -624,7 +672,7 @@ public class SalesService : ISalesService
         )).ToList();
     }
 
-    // RULE 6: Sales Return -> Stock IN
+    // Sales Returns: Creation -> PENDING (Awaiting Stock Confirmation)
     public async Task<SalesReturnDto> ProcessSalesReturnAsync(CreateSalesReturnRequest request, int? userId, string? username, CancellationToken cancellationToken = default)
     {
         if (request.Items == null || request.Items.Count == 0)
@@ -639,9 +687,9 @@ public class SalesService : ISalesService
             .FirstOrDefaultAsync(s => s.Id == request.SalesOrderId, cancellationToken);
 
         if (sale == null) throw new KeyNotFoundException($"Sales order with ID {request.SalesOrderId} not found.");
-        if (sale.Status != "CONFIRMED" && sale.Status != "DELIVERED" && sale.Status != "SALES_ORDER" && sale.Status != "COMPLETED")
+        if (sale.Status != "DELIVERED" && sale.Status != "COMPLETED")
         {
-            throw new InvalidOperationException($"Cannot return items for order in '{sale.Status}' status. Sales order must be confirmed or delivered.");
+            throw new InvalidOperationException($"Cannot return items for sales order in '{sale.Status}' status. Sales order must be DELIVERED and physically dispatched from warehouse before customer returns can be accepted.");
         }
 
         var warehouseId = request.WarehouseId ?? sale.WarehouseId;
@@ -658,7 +706,7 @@ public class SalesService : ISalesService
             CustomerId = sale.CustomerId,
             WarehouseId = warehouseId,
             ReturnDateUtc = DateTimeOffset.UtcNow,
-            Status = "COMPLETED",
+            Status = "PENDING", // Initial status awaiting stock confirmation
             Reason = request.Reason.Trim(),
             Notes = request.Notes?.Trim(),
             CreatedByUserId = userId,
@@ -672,14 +720,16 @@ public class SalesService : ISalesService
             var saleItem = sale.Items.FirstOrDefault(i => i.ProductId == itemReq.ProductId || i.Id == itemReq.ProductId);
             if (saleItem == null)
             {
-                saleItem = sale.Items.FirstOrDefault();
-                if (saleItem == null) throw new InvalidOperationException($"Product ID {itemReq.ProductId} was not found on invoice {sale.InvoiceNumber}.");
+                throw new InvalidOperationException($"Product with ID {itemReq.ProductId} was not found on sales order {sale.InvoiceNumber}.");
             }
 
-            var actualProductId = saleItem.ProductId;
-            if (itemReq.Quantity <= 0 || itemReq.Quantity > saleItem.Quantity)
+            var prevReturned = await _context.SalesReturnItems
+                .Where(ri => ri.SalesReturn != null && ri.SalesReturn.SalesOrderId == sale.Id && ri.SalesReturn.Status != "CANCELLED" && ri.ProductId == saleItem.ProductId)
+                .SumAsync(ri => (int?)ri.Quantity, cancellationToken) ?? 0;
+
+            if (itemReq.Quantity <= 0 || prevReturned + itemReq.Quantity > saleItem.Quantity)
             {
-                throw new InvalidOperationException($"Invalid return quantity {itemReq.Quantity}.");
+                throw new InvalidOperationException($"Cannot return {itemReq.Quantity} units. Originally delivered: {saleItem.Quantity}, already pending/returned: {prevReturned}. Maximum returnable: {saleItem.Quantity - prevReturned}.");
             }
 
             var lineRefund = itemReq.Quantity * saleItem.UnitPrice;
@@ -687,41 +737,128 @@ public class SalesService : ISalesService
 
             sr.Items.Add(new SalesReturnItem
             {
-                ProductId = actualProductId,
+                ProductId = saleItem.ProductId,
                 Quantity = itemReq.Quantity,
                 UnitPrice = saleItem.UnitPrice,
                 Subtotal = lineRefund,
                 Condition = itemReq.Condition?.Trim() ?? "Good",
                 Reason = itemReq.Reason?.Trim()
             });
-
-            // RULE 6: Sales Return -> Stock IN!
-            await _inventoryService.IncreaseStockAsync(
-                productId: actualProductId,
-                warehouseId: sr.WarehouseId,
-                quantity: itemReq.Quantity,
-                unitCost: saleItem.Product?.CostPrice ?? (saleItem.UnitPrice * 0.7m),
-                referenceType: "SALES_RETURN",
-                referenceNo: retNo,
-                reason: $"Sales Return: {request.Reason}",
-                supplierOrRecipient: sale.Customer?.Name ?? "Customer",
-                notes: itemReq.Reason,
-                userId: userId,
-                username: username,
-                cancellationToken: cancellationToken
-            );
         }
 
         sr.RefundAmount = totalRefund;
         _context.SalesReturns.Add(sr);
         await _context.SaveChangesAsync(cancellationToken);
 
-        await _auditService.LogAsync("RETURN", "SalesReturn", sr.Id.ToString(), $"Processed sales return {sr.ReturnNumber} for invoice {sale.InvoiceNumber} (Refund: ${sr.RefundAmount:F2})", userId: userId, username: username, cancellationToken: cancellationToken);
+        await _auditService.LogAsync("RETURN_REQUEST", "SalesReturn", sr.Id.ToString(), $"Created sales return request {sr.ReturnNumber} for invoice {sale.InvoiceNumber} (Refund: ${sr.RefundAmount:F2}, Awaiting stock keeper confirmation)", userId: userId, username: username, cancellationToken: cancellationToken);
 
         return (await GetSalesReturnByIdAsync(sr.Id, cancellationToken))!;
     }
 
-    public async Task<PagedResult<SalesReturnDto>> GetSalesReturnsAsync(int? customerId, int? saleId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
+    // Stock Confirmation -> Physical Stock IN
+    public async Task<SalesReturnDto> ConfirmSalesReturnAsync(int id, int? warehouseId, int? userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var sr = await _context.SalesReturns
+            .Include(r => r.Customer)
+            .Include(r => r.SalesOrder)
+            .Include(r => r.Warehouse)
+            .Include(r => r.Items)
+            .ThenInclude(i => i.Product)
+            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+        if (sr == null) throw new KeyNotFoundException($"Sales return with ID {id} not found.");
+        if (sr.Status == "COMPLETED")
+        {
+            throw new InvalidOperationException($"Sales return {sr.ReturnNumber} has already been confirmed and restocked into warehouse.");
+        }
+        if (sr.Status == "CANCELLED")
+        {
+            throw new InvalidOperationException($"Cannot confirm cancelled sales return {sr.ReturnNumber}.");
+        }
+
+        var targetWarehouseId = warehouseId ?? sr.WarehouseId ?? sr.SalesOrder?.WarehouseId;
+        if (!targetWarehouseId.HasValue)
+        {
+            targetWarehouseId = await _context.Warehouses.Where(w => w.IsActive).Select(w => (int?)w.Id).FirstOrDefaultAsync(cancellationToken);
+            if (!targetWarehouseId.HasValue)
+            {
+                throw new InvalidOperationException("Please select an active warehouse to receive returned items into.");
+            }
+        }
+
+        sr.WarehouseId = targetWarehouseId;
+        var wh = await _context.Warehouses.FirstOrDefaultAsync(w => w.Id == targetWarehouseId.Value, cancellationToken);
+
+        using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        foreach (var item in sr.Items)
+        {
+            var p = item.Product ?? await _context.StockItems.FirstOrDefaultAsync(x => x.Id == item.ProductId, cancellationToken);
+            var unitCost = p?.CostPrice ?? (item.UnitPrice * 0.7m);
+
+            // RULE 6: Customer Return Confirmed -> Physical Stock IN
+            await _inventoryService.IncreaseStockAsync(
+                productId: item.ProductId,
+                warehouseId: targetWarehouseId.Value,
+                quantity: item.Quantity,
+                unitCost: unitCost,
+                referenceType: "SALES_RETURN",
+                referenceNo: sr.ReturnNumber,
+                reason: $"Customer Return Confirmed: {sr.Reason} (Restocked into {wh?.Name ?? "Warehouse"})",
+                supplierOrRecipient: sr.Customer?.Name ?? "Customer",
+                notes: item.Reason,
+                userId: userId,
+                username: username,
+                cancellationToken: cancellationToken
+            );
+        }
+
+        sr.Status = "COMPLETED";
+        sr.ConfirmedByUserId = userId;
+        sr.ConfirmedByUsername = username;
+        sr.ConfirmedAtUtc = DateTimeOffset.UtcNow;
+
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        await _auditService.LogAsync("RETURN_CONFIRM", "SalesReturn", sr.Id.ToString(), $"Confirmed sales return {sr.ReturnNumber} for invoice {sr.SalesOrder?.InvoiceNumber} into {wh?.Name ?? "Warehouse"} (Physical Stock IN completed)", userId: userId, username: username, cancellationToken: cancellationToken);
+
+        return (await GetSalesReturnByIdAsync(sr.Id, cancellationToken))!;
+    }
+
+    public async Task<SalesReturnDto> CancelSalesReturnAsync(int id, string? reason, int? userId, string? username, CancellationToken cancellationToken = default)
+    {
+        var sr = await _context.SalesReturns
+            .Include(r => r.Customer)
+            .Include(r => r.SalesOrder)
+            .Include(r => r.Warehouse)
+            .Include(r => r.Items)
+            .ThenInclude(i => i.Product)
+            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+        if (sr == null) throw new KeyNotFoundException($"Sales return with ID {id} not found.");
+        if (sr.Status == "COMPLETED")
+        {
+            throw new InvalidOperationException($"Cannot cancel sales return {sr.ReturnNumber} because it has already been restocked into inventory.");
+        }
+        if (sr.Status == "CANCELLED")
+        {
+            throw new InvalidOperationException($"Sales return {sr.ReturnNumber} is already cancelled.");
+        }
+
+        sr.Status = "CANCELLED";
+        sr.Notes = string.IsNullOrWhiteSpace(reason)
+            ? sr.Notes
+            : (string.IsNullOrEmpty(sr.Notes) ? $"Cancelled: {reason}" : $"{sr.Notes} | Cancelled: {reason}");
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await _auditService.LogAsync("RETURN_CANCEL", "SalesReturn", sr.Id.ToString(), $"Cancelled sales return request {sr.ReturnNumber}. Reason: {reason}", userId: userId, username: username, cancellationToken: cancellationToken);
+
+        return (await GetSalesReturnByIdAsync(sr.Id, cancellationToken))!;
+    }
+
+    public async Task<PagedResult<SalesReturnDto>> GetSalesReturnsAsync(string? status, int? customerId, int? saleId, int page = 1, int pageSize = 50, CancellationToken cancellationToken = default)
     {
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
@@ -733,6 +870,12 @@ public class SalesService : ISalesService
             .Include(r => r.Items)
             .ThenInclude(i => i.Product)
             .AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(status) && status.ToUpperInvariant() != "ALL")
+        {
+            var st = status.Trim().ToUpperInvariant();
+            query = query.Where(r => r.Status == st);
+        }
 
         if (customerId.HasValue) query = query.Where(r => r.CustomerId == customerId.Value);
         if (saleId.HasValue) query = query.Where(r => r.SalesOrderId == saleId.Value);
@@ -822,6 +965,8 @@ public class SalesService : ISalesService
         r.Reason,
         r.Notes,
         r.CreatedByUsername,
+        r.ConfirmedByUsername,
+        r.ConfirmedAtUtc,
         r.CreatedAtUtc,
         r.Items.Select(i => new SalesReturnItemDto(
             i.Id,

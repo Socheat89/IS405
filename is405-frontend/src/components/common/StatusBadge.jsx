@@ -72,36 +72,46 @@ export const StatusBadge = ({ status, type = 'stock', size = 'sm' }) => {
     );
   }
 
-  if (type === 'sales') {
-    switch (status) {
-      case 'QUOTATION':
-        return (
-          <span className={`inline-flex items-center font-medium rounded-full bg-amber-500/10 text-amber-800 border border-amber-300 shadow-xs ${sizeClasses}`}>
-            <Clock className="w-3 h-3 text-amber-600" />
-            <span>Quotation</span>
-          </span>
-        );
-      case 'SALES_ORDER':
-        return (
-          <span className={`inline-flex items-center font-medium rounded-full bg-blue-500/10 text-blue-700 border border-blue-300 shadow-xs ${sizeClasses}`}>
-            <CheckCircle2 className="w-3 h-3 text-blue-600" />
-            <span>Sales Order</span>
-          </span>
-        );
-      case 'DELIVERED':
-        return (
-          <span className={`inline-flex items-center font-medium rounded-full bg-emerald-500/10 text-emerald-800 border border-emerald-300 shadow-xs ${sizeClasses}`}>
-            <Truck className="w-3 h-3 text-emerald-600" />
-            <span>Delivered</span>
-          </span>
-        );
-      default:
-        return (
-          <span className={`inline-flex items-center font-medium rounded-full bg-slate-100 text-slate-700 border border-slate-200 ${sizeClasses}`}>
-            {status}
-          </span>
-        );
+  const normalizedStatus = (status || '').toUpperCase();
+
+  if (type === 'sales' || ['QUOTATION', 'DRAFT', 'PENDING', 'SALES_ORDER', 'CONFIRMED', 'DELIVERED', 'COMPLETED', 'CANCELLED'].includes(normalizedStatus)) {
+    if (normalizedStatus === 'QUOTATION' || normalizedStatus === 'DRAFT' || normalizedStatus === 'PENDING') {
+      return (
+        <span className={`inline-flex items-center font-medium rounded-full bg-amber-500/10 text-amber-800 border border-amber-300 shadow-xs ${sizeClasses}`}>
+          <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+          <span>Quotation</span>
+        </span>
+      );
     }
+    if (normalizedStatus === 'SALES_ORDER' || normalizedStatus === 'CONFIRMED') {
+      return (
+        <span className={`inline-flex items-center font-medium rounded-full bg-blue-500/10 text-blue-700 border border-blue-300 shadow-xs ${sizeClasses}`}>
+          <CheckCircle2 className="w-3 h-3 text-blue-600 shrink-0" />
+          <span>Confirmed SO</span>
+        </span>
+      );
+    }
+    if (normalizedStatus === 'DELIVERED' || normalizedStatus === 'COMPLETED') {
+      return (
+        <span className={`inline-flex items-center font-medium rounded-full bg-emerald-500/10 text-emerald-800 border border-emerald-300 shadow-xs ${sizeClasses}`}>
+          <Truck className="w-3 h-3 text-emerald-600 shrink-0" />
+          <span>Delivered</span>
+        </span>
+      );
+    }
+    if (normalizedStatus === 'CANCELLED') {
+      return (
+        <span className={`inline-flex items-center font-medium rounded-full bg-rose-500/10 text-rose-700 border border-rose-300 shadow-xs ${sizeClasses}`}>
+          <XCircle className="w-3 h-3 text-rose-600 shrink-0" />
+          <span>Cancelled</span>
+        </span>
+      );
+    }
+    return (
+      <span className={`inline-flex items-center font-medium rounded-full bg-slate-100 text-slate-700 border border-slate-200 ${sizeClasses}`}>
+        {status}
+      </span>
+    );
   }
 
   return (

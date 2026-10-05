@@ -22,6 +22,7 @@ const PERM_FALLBACK = [
   { id: 41, code: 'sales-orders.view' }, { id: 42, code: 'sales-orders.create' },
   { id: 43, code: 'sales-orders.confirm' }, { id: 44, code: 'sales-orders.cancel' },
   { id: 45, code: 'sales-orders.pay' }, { id: 46, code: 'sales-returns.view' },
+  { id: 47, code: 'sales-returns.create' }, { id: 62, code: 'sales-returns.confirm' },
   { id: 48, code: 'warehouses.view' }, { id: 51, code: 'transfers.view' },
   { id: 52, code: 'transfers.create' }, { id: 59, code: 'reports.view' },
   { id: 60, code: 'audit.view' }

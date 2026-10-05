@@ -92,7 +92,13 @@ export const SalesReturnModal = ({ isOpen, onClose, onReturnCreated, initialSale
     setError('');
 
     if (!selectedSaleId || !currentSale) {
-      setError('Please select a confirmed Sales Order.');
+      setError('Please select a delivered Sales Order.');
+      return;
+    }
+
+    const st = (currentSale.status || '').toUpperCase();
+    if (st !== 'DELIVERED' && st !== 'COMPLETED') {
+      setError(`Cannot process return: Order status is '${st}'. Only DELIVERED orders can be returned because undelivered orders have not deducted warehouse stock.`);
       return;
     }
 
@@ -148,10 +154,10 @@ export const SalesReturnModal = ({ isOpen, onClose, onReturnCreated, initialSale
             </div>
             <div>
               <h2 className="text-base font-bold tracking-tight text-white">
-                Customer Sales Return (Stock IN)
+                Customer Sales Return Request
               </h2>
               <p className="text-xs text-teal-100/90 mt-0.5">
-                Process product returns / exchanges and automatically restock warehouse inventory
+                Initiate customer return request (Stock Keeper confirmation required to restock into warehouse)
               </p>
             </div>
           </div>
@@ -332,12 +338,17 @@ export const SalesReturnModal = ({ isOpen, onClose, onReturnCreated, initialSale
           </div>
 
           {/* Total Refund / Restock Summary */}
-          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs font-bold text-emerald-950">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Total Refund / Credit Value:</span>
+          <div className="p-4 bg-teal-50/80 border border-teal-200 rounded-2xl flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-bold text-teal-950">
+                <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                <span>Estimated Refund / Credit Value:</span>
+              </div>
+              <p className="text-[11px] text-teal-700 mt-0.5">
+                Items will enter warehouse inventory once confirmed by Stock Keeper.
+              </p>
             </div>
-            <span className="text-xl font-bold font-mono text-emerald-700">
+            <span className="text-xl font-bold font-mono text-teal-800">
               ${calculateTotalRefund().toFixed(2)}
             </span>
           </div>
@@ -356,7 +367,7 @@ export const SalesReturnModal = ({ isOpen, onClose, onReturnCreated, initialSale
               disabled={submitting || returnItems.length === 0}
               className="px-5 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
-              {submitting ? 'Processing Return...' : 'Restock & Complete Return'}
+              {submitting ? 'Submitting Request...' : 'Submit Return Request (Awaiting Stock)'}
             </button>
           </div>
         </form>

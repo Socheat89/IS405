@@ -2,10 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BarChart3, DollarSign, Package, AlertTriangle, Boxes, 
   ArrowDownLeft, ArrowUpRight, Printer, RefreshCw, 
-  Layers, Tag, ShieldAlert, Sparkles, Filter, CheckCircle2
+  Layers, Tag, ShieldAlert, Sparkles, Filter, CheckCircle2, FileSpreadsheet
 } from 'lucide-react';
 import { stockItemService } from '../../../services/stock/stockItemService';
 import { useToast } from '../../../context/ToastContext';
+import { useExport } from '../../../context/ExportContext';
 
 export const StockReportsPage = () => {
   const [items, setItems] = useState([]);
@@ -13,6 +14,7 @@ export const StockReportsPage = () => {
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const toast = useToast();
+  const { exportData } = useExport();
 
   const loadData = async () => {
     setLoading(true);
@@ -155,6 +157,35 @@ export const StockReportsPage = () => {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => {
+              const dataToExport = filteredItems.map(i => ({
+                itemName: i.itemName,
+                category: i.categoryName || 'General',
+                sku: i.sku || 'N/A',
+                quantity: i.quantityOnHand || 0,
+                costPrice: Number(i.costPrice || 0).toFixed(2),
+                retailPrice: Number(i.retailPrice || 0).toFixed(2),
+                costValuation: Number(i.costPrice || 0) * Number(i.quantityOnHand || 0),
+                retailValuation: Number(i.retailPrice || 0) * Number(i.quantityOnHand || 0)
+              }));
+              exportData(dataToExport, [
+                { header: 'Item Name', key: 'itemName' },
+                { header: 'Category', key: 'category' },
+                { header: 'SKU', key: 'sku' },
+                { header: 'Quantity On Hand', key: 'quantity' },
+                { header: 'Cost Price ($)', key: 'costPrice' },
+                { header: 'Retail Price ($)', key: 'retailPrice' },
+                { header: 'Total Cost Valuation ($)', key: 'costValuation' },
+                { header: 'Total Retail Valuation ($)', key: 'retailValuation' }
+              ], `Stock_Valuation_${new Date().toISOString().substring(0, 10)}.xlsx`);
+            }}
+            className="px-3.5 py-1.5 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs print:hidden"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Export Data</span>
+          </button>
+
           <button
             onClick={() => window.print()}
             className="px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs print:hidden"

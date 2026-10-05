@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Tag, CheckCircle2, Truck, DollarSign, Plus, Clock, 
   ArrowUpRight, ShoppingBag, FileSpreadsheet, User, Calendar,
-  Sparkles, Check, ChevronRight, Edit2, Trash2, RotateCcw, Printer
+  Sparkles, Check, ChevronRight, Edit2, Trash2, RotateCcw, Printer, Download
 } from 'lucide-react';
 import { ControlPanel } from '../../../components/common/ControlPanel';
 import { StatusBadge } from '../../../components/common/StatusBadge';
 import { ConfirmModal } from '../../../components/common/ConfirmModal';
 import { InvoiceModal } from '../../../components/common/InvoiceModal';
+import { useExport } from '../../../context/ExportContext';
 import { salesService } from '../../../services/sales/salesService';
 import { SalesOrderModal as SalesModal } from './SalesOrderModal';
 import { SalesReturnModal } from '../returns/SalesReturnModal';
@@ -16,6 +17,7 @@ import { useToast } from '../../../context/ToastContext';
 
 export const SalesOrdersPage = () => {
   const { hasPermission } = useAuth();
+  const { exportData } = useExport();
   const toast = useToast();
 
   const canCreate = hasPermission('sales-orders.create');
@@ -39,8 +41,9 @@ export const SalesOrdersPage = () => {
   const [returnModalOpen, setReturnModalOpen] = useState(false);
   const [returnSO, setReturnSO] = useState(null);
 
-  // Print Invoice State
+  // Print Invoice & Delivery Note States
   const [printInvoiceSO, setPrintInvoiceSO] = useState(null);
+  const [printDeliveryNoteSO, setPrintDeliveryNoteSO] = useState(null);
 
   // Delete Confirm State
   const [deleteConfirm, setDeleteConfirm] = useState({
@@ -61,14 +64,49 @@ export const SalesOrdersPage = () => {
     }
   };
 
+  const handlePrintDeliveryNote = async (so) => {
+    try {
+      let full = so;
+      if (!so.items || so.items.length === 0) {
+        full = await salesService.getSalesOrder(so.id);
+      }
+      setPrintDeliveryNoteSO(full || so);
+    } catch {
+      setPrintDeliveryNoteSO(so);
+    }
+  };
+
+  const handleExportExcel = () => {
+    const dataToExport = filteredOrders.map(so => ({
+      soNumber: so.soNumber || so.invoiceNumber,
+      customer: so.customerName || 'N/A',
+      orderDate: so.orderDate || (so.saleDateUtc ? so.saleDateUtc.substring(0, 10) : 'N/A'),
+      deliveryDate: so.deliveryDate || 'N/A',
+      itemsCount: so.itemsCount || so.items?.length || 1,
+      totalAmount: Number(so.totalAmount || 0).toFixed(2),
+      status: so.status || 'QUOTATION'
+    }));
+
+    exportData(dataToExport, [
+      { header: 'SO / Invoice #', key: 'soNumber' },
+      { header: 'Customer', key: 'customer' },
+      { header: 'Order Date', key: 'orderDate' },
+      { header: 'Delivery Date', key: 'deliveryDate' },
+      { header: 'Total Items', key: 'itemsCount' },
+      { header: 'Order Value ($)', key: 'totalAmount' },
+      { header: 'Status', key: 'status' }
+    ], `Sales_Orders_${new Date().toISOString().substring(0, 10)}.xlsx`);
+  };
+
+  const isQuotation = (st) => ['QUOTATION', 'DRAFT', 'PENDING'].includes((st || '').toUpperCase());
+  const isConfirmed = (st) => ['CONFIRMED', 'SALES_ORDER'].includes((st || '').toUpperCase());
+  const isDelivered = (st) => ['DELIVERED', 'COMPLETED'].includes((st || '').toUpperCase());
+
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const data = await salesService.getSalesOrders({
-        search: searchQuery,
-        status: statusFilter
-      });
-      setOrders(data);
+      const data = await salesService.getSalesOrders({});
+      setOrders(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -78,7 +116,7 @@ export const SalesOrdersPage = () => {
 
   useEffect(() => {
     fetchOrders();
-  }, [searchQuery, statusFilter]);
+  }, []);
 
   const handleCreateNew = () => {
     if (!canCreate) return;
@@ -157,7 +195,11 @@ export const SalesOrdersPage = () => {
     if (!canConfirm && !canPay) return;
     try {
       await salesService.updateSalesStatus(soId, nextStatus);
-      toast?.success?.(`Sales order confirmed & Stock OUT deducted!`);
+      if (nextStatus === 'CONFIRMED') {
+        toast?.success?.('Sales order confirmed! Awaiting delivery confirmation in Stock Module.');
+      } else {
+        toast?.success?.('Sales order updated successfully');
+      }
       await fetchOrders();
     } catch (err) {
       const msg = typeof err === 'string' ? err : err?.response?.data?.message || err?.message || 'Error updating order status';
@@ -166,18 +208,47 @@ export const SalesOrdersPage = () => {
   };
 
   const metrics = useMemo(() => {
-    const totalRevenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-    const quotations = orders.filter(o => o.status === 'QUOTATION').length;
-    const confirmed = orders.filter(o => o.status === 'SALES_ORDER').length;
-    const delivered = orders.filter(o => o.status === 'DELIVERED').length;
+    const totalRevenue = orders
+      .filter(o => isConfirmed(o.status) || isDelivered(o.status))
+      .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    const quotations = orders.filter(o => isQuotation(o.status)).length;
+    const confirmed = orders.filter(o => isConfirmed(o.status)).length;
+    const delivered = orders.filter(o => isDelivered(o.status)).length;
     return { totalRevenue, quotations, confirmed, delivered };
   }, [orders]);
 
+  const filteredOrders = useMemo(() => {
+    let result = orders;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter(so =>
+        (so.soNumber || so.invoiceNumber)?.toLowerCase().includes(q) ||
+        so.customerName?.toLowerCase().includes(q)
+      );
+    }
+    if (statusFilter && statusFilter !== 'ALL') {
+      const target = statusFilter.toUpperCase();
+      result = result.filter(so => {
+        if (target === 'CONFIRMED' || target === 'SALES_ORDER') {
+          return isConfirmed(so.status);
+        }
+        if (target === 'QUOTATION' || target === 'DRAFT') {
+          return isQuotation(so.status);
+        }
+        if (target === 'DELIVERED') {
+          return isDelivered(so.status);
+        }
+        return (so.status || '').toUpperCase() === target;
+      });
+    }
+    return result;
+  }, [orders, searchQuery, statusFilter]);
+
   const statusOptions = [
-    { label: 'All Orders', value: 'ALL' },
-    { label: 'Quotations', value: 'QUOTATION' },
-    { label: 'Confirmed SO', value: 'SALES_ORDER' },
-    { label: 'Delivered', value: 'DELIVERED' },
+    { label: `All Orders (${orders.length})`, value: 'ALL' },
+    { label: `Quotations (${metrics.quotations})`, value: 'QUOTATION' },
+    { label: `Confirmed SO (${metrics.confirmed})`, value: 'CONFIRMED' },
+    { label: `Delivered (${metrics.delivered})`, value: 'DELIVERED' },
   ];
 
   return (
@@ -187,6 +258,16 @@ export const SalesOrdersPage = () => {
         subtitle="Manage customer sales quotations, sales orders, order confirmations, and invoices"
         onCreateNew={canCreate ? handleCreateNew : null}
         createLabel="New Sales Order"
+        actions={
+          <button
+            onClick={handleExportExcel}
+            className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Export sales orders to Microsoft Excel"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export Excel</span>
+          </button>
+        }
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         viewMode={viewMode}
@@ -198,7 +279,7 @@ export const SalesOrdersPage = () => {
         loading={loading}
       />
 
-      <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6 print-hide-on-modal">
         {/* KPI Metrics */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="erp-card p-4.5 relative overflow-hidden flex items-center justify-between border-l-4 border-l-emerald-500 bg-white">
@@ -254,14 +335,16 @@ export const SalesOrdersPage = () => {
             <div className="w-10 h-10 border-4 border-[#2089C8] border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
             <p className="text-xs font-medium text-slate-600">Loading sales orders...</p>
           </div>
-        ) : orders.length === 0 ? (
+        ) : filteredOrders.length === 0 ? (
           <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center max-w-md mx-auto shadow-xs">
             <div className="p-4 bg-sky-50 text-[#2089C8] border border-sky-100 rounded-2xl inline-block mb-3">
               <ShoppingBag className="w-10 h-10" />
             </div>
             <h3 className="font-bold text-slate-800 text-base">No Sales Orders Found</h3>
             <p className="text-xs text-slate-500 mt-1 mb-5">
-              Create your first customer quotation or sales order.
+              {statusFilter !== 'ALL' 
+                ? `No orders matching status "${statusOptions.find(o => o.value === statusFilter)?.label || statusFilter}".`
+                : 'Create your first customer quotation or sales order.'}
             </p>
             {canCreate && (
               <button
@@ -290,7 +373,7 @@ export const SalesOrdersPage = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {orders.map((so) => (
+                  {filteredOrders.map((so) => (
                     <tr key={so.id} className="hover:bg-sky-50/40 transition-colors group">
                       <td className="py-3.5 px-4 font-mono font-bold">
                         <span className="px-2.5 py-1 rounded-lg bg-sky-50 text-[#155e89] border border-sky-200 text-[11px] group-hover:border-sky-300">
@@ -304,7 +387,7 @@ export const SalesOrdersPage = () => {
                           </div>
                           <div>
                             <span className="font-semibold text-slate-900 block">{so.customerName}</span>
-                            <span className="text-[10px] text-slate-400">{so.itemsCount || 1} items</span>
+                            <span className="text-[10px] text-slate-400">{so.itemsCount || so.items?.length || 1} items</span>
                           </div>
                         </div>
                       </td>
@@ -314,23 +397,45 @@ export const SalesOrdersPage = () => {
                         ${(so.totalAmount || 0).toFixed(2)}
                       </td>
                       <td className="py-3.5 px-4">
-                        <StatusBadge status={so.status} />
+                        <StatusBadge status={so.status} type="sales" />
                       </td>
                       {(canConfirm || canEdit || canDelete) && (
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            {canConfirm && (so.status === 'QUOTATION' || so.status === 'DRAFT') && (
+                            {canConfirm && isQuotation(so.status) && (
                               <button
                                 onClick={() => handleStatusChange(so.id, 'CONFIRMED')}
-                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
-                                title="Confirm & Dispatch (Performs Stock OUT)"
+                                className="px-2.5 py-1 bg-sky-50 hover:bg-sky-100 text-[#155e89] border border-sky-300 rounded-lg text-xs font-semibold inline-flex items-center gap-1 transition-all cursor-pointer shadow-2xs"
+                                title="Confirm Quotation into Confirmed Sales Order"
                               >
                                 <Check className="w-3.5 h-3.5" />
-                                <span>Confirm & Dispatch</span>
+                                <span>Confirm SO</span>
                               </button>
                             )}
 
-                            {(so.status === 'SALES_ORDER' || so.status === 'CONFIRMED' || so.status === 'DELIVERED') && (
+                            {isConfirmed(so.status) && (
+                              <span 
+                                className="px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1 shadow-2xs"
+                                title="Goods dispatch & stock deduction is handled in Stock Module (Stock Out / Deliveries)"
+                              >
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                <span>Awaiting Delivery</span>
+                              </span>
+                            )}
+
+                            {/* Print Delivery Note (DN - No Prices) for Confirmed/Delivered Orders */}
+                            {(isConfirmed(so.status) || isDelivered(so.status)) && (
+                              <button
+                                onClick={() => handlePrintDeliveryNote(so)}
+                                className="px-2 py-1 text-slate-600 hover:text-[#2089C8] hover:bg-sky-50 border border-slate-200 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Print Delivery Note / Packing Slip (DN - No Prices)"
+                              >
+                                <Printer className="w-3 h-3 text-[#2089C8]" />
+                                <span>DN</span>
+                              </button>
+                            )}
+
+                            {isDelivered(so.status) && (
                               <button
                                 onClick={() => {
                                   setReturnSO(so);
@@ -344,11 +449,11 @@ export const SalesOrdersPage = () => {
                               </button>
                             )}
 
-                            {/* Print / View Official Invoice Button */}
+                            {/* Print / View Official Commercial Invoice Button */}
                             <button
                               onClick={() => handlePrintInvoice(so)}
                               className="p-1.5 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 border border-transparent hover:border-emerald-200 rounded-lg transition-colors cursor-pointer"
-                              title="View & Print Official Invoice"
+                              title="View & Print Commercial Invoice"
                             >
                               <Printer className="w-3.5 h-3.5 text-emerald-600" />
                             </button>
@@ -383,20 +488,20 @@ export const SalesOrdersPage = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {orders.map((so) => (
+            {filteredOrders.map((so) => (
               <div key={so.id} className="erp-card p-5 flex flex-col justify-between hover:border-[#2089C8]/40 hover:shadow-md transition-all group">
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <span className="font-mono text-xs font-bold text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-lg border border-sky-200">
                       {so.soNumber || so.invoiceNumber}
                     </span>
-                    <StatusBadge status={so.status} />
+                    <StatusBadge status={so.status} type="sales" />
                   </div>
 
                   <h3 className="font-bold text-slate-900 text-base group-hover:text-[#2089C8] transition-colors">
                     {so.customerName}
                   </h3>
-                  <p className="text-xs text-slate-500 mt-1">Order Date: {so.orderDate} • {so.itemsCount || 1} items</p>
+                  <p className="text-xs text-slate-500 mt-1">Order Date: {so.orderDate} • {so.itemsCount || so.items?.length || 1} items</p>
 
                   <div className="mt-4 p-3.5 bg-slate-50/80 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
                     <span className="text-slate-500 font-medium font-sans">Total Amount:</span>
@@ -415,10 +520,21 @@ export const SalesOrdersPage = () => {
                           <Edit2 className="w-3.5 h-3.5" /> Edit
                         </button>
                       )}
+                      
+                      {(isConfirmed(so.status) || isDelivered(so.status)) && (
+                        <button
+                          onClick={() => handlePrintDeliveryNote(so)}
+                          className="px-2 py-1 text-slate-600 hover:text-[#2089C8] bg-slate-100 hover:bg-sky-50 border border-slate-200 rounded-lg text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Print Delivery Note (DN - No Prices)"
+                        >
+                          <Printer className="w-3 h-3 text-[#2089C8]" /> DN
+                        </button>
+                      )}
+
                       <button
                         onClick={() => handlePrintInvoice(so)}
                         className="p-1 text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-                        title="Print Invoice"
+                        title="Print Commercial Invoice"
                       >
                         <Printer className="w-3.5 h-3.5 text-emerald-600" />
                       </button>
@@ -434,12 +550,31 @@ export const SalesOrdersPage = () => {
                       )}
                     </div>
 
-                    {canConfirm && so.status === 'QUOTATION' && (
+                    {canConfirm && isQuotation(so.status) && (
                       <button
-                        onClick={() => handleStatusChange(so.id, 'SALES_ORDER')}
+                        onClick={() => handleStatusChange(so.id, 'CONFIRMED')}
                         className="px-3 py-1 bg-sky-50 hover:bg-sky-100 text-[#2089C8] border border-sky-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
                       >
-                        <Check className="w-3.5 h-3.5" /> Confirm Order
+                        <Check className="w-3.5 h-3.5" /> Confirm SO
+                      </button>
+                    )}
+
+                    {isConfirmed(so.status) && (
+                      <span className="px-2.5 py-1 text-[11px] font-semibold text-amber-700 bg-amber-50 rounded-lg border border-amber-200 flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-600" /> Stock Dispatch
+                      </span>
+                    )}
+
+                    {isDelivered(so.status) && (
+                      <button
+                        onClick={() => {
+                          setReturnSO(so);
+                          setReturnModalOpen(true);
+                        }}
+                        className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Process Return"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-teal-600" /> Return
                       </button>
                     )}
                   </div>
@@ -464,6 +599,14 @@ export const SalesOrdersPage = () => {
         onClose={() => setPrintInvoiceSO(null)}
         type="SALES_INVOICE"
         data={printInvoiceSO}
+      />
+
+      {/* Official Printable Delivery Note (DN) Modal - NO PRICES */}
+      <InvoiceModal
+        isOpen={Boolean(printDeliveryNoteSO)}
+        onClose={() => setPrintDeliveryNoteSO(null)}
+        type="DELIVERY_NOTE"
+        data={printDeliveryNoteSO}
       />
 
       <ConfirmModal

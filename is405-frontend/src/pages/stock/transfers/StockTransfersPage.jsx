@@ -183,7 +183,7 @@ export const StockTransfersPage = () => {
         }
       />
 
-      <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6 print-hide-on-modal">
         {/* Feedback Alert */}
         {feedbackMessage.text && (
           <div

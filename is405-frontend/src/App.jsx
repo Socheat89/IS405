@@ -141,13 +141,17 @@ const MainApp = () => {
   );
 };
 
+import { ExportProvider } from './context/ExportContext';
+
 export default function App() {
   return (
     <LanguageProvider>
       <ToastProvider>
-        <AuthProvider>
-          <MainApp />
-        </AuthProvider>
+        <ExportProvider>
+          <AuthProvider>
+            <MainApp />
+          </AuthProvider>
+        </ExportProvider>
       </ToastProvider>
     </LanguageProvider>
   );

@@ -18,6 +18,28 @@ export const ItemLedgerModal = ({ isOpen, onClose, item }) => {
     }
   }, [isOpen, item]);
 
+  // Handle printing modal lifecycle
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleBeforePrint = () => document.body.classList.add('printing-modal');
+    const handleAfterPrint = () => document.body.classList.remove('printing-modal');
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, [isOpen]);
+
+  const handlePrint = () => {
+    document.body.classList.add('printing-modal');
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-modal');
+    }, 1000);
+  };
+
   const loadHistory = async () => {
     setLoading(true);
     try {
@@ -97,8 +119,8 @@ export const ItemLedgerModal = ({ isOpen, onClose, item }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl flex flex-col max-h-[90vh] overflow-hidden">
+    <div className="item-ledger-modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fadeIn">
+      <div className="item-ledger-modal-card bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl flex flex-col max-h-[90vh] overflow-hidden">
         
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
@@ -121,9 +143,9 @@ export const ItemLedgerModal = ({ isOpen, onClose, item }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 print:hidden">
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer print:hidden"
             >
               <Printer className="w-3.5 h-3.5 text-slate-500" />
@@ -131,7 +153,7 @@ export const ItemLedgerModal = ({ isOpen, onClose, item }) => {
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer print:hidden"
             >
               <X className="w-5 h-5" />
             </button>
@@ -173,7 +195,7 @@ export const ItemLedgerModal = ({ isOpen, onClose, item }) => {
         </div>
 
         {/* Toolbar / Filters */}
-        <div className="p-4 border-b border-slate-100 bg-white flex flex-wrap items-center justify-between gap-3">
+        <div className="p-4 border-b border-slate-100 bg-white flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div className="flex items-center gap-2">
             <div className="relative w-64">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -289,7 +311,7 @@ export const ItemLedgerModal = ({ isOpen, onClose, item }) => {
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500">
+        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500 print:hidden">
           <span>Showing {filteredMovements.length} of {movements.length} total movement entries</span>
           <button
             onClick={onClose}

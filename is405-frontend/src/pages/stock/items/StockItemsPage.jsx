@@ -13,12 +13,14 @@ import { warehouseService } from '../../../services/stock/warehouseService';
 import { StockItemModal as StockModal } from './StockItemModal';
 import { ItemLedgerModal } from './ItemLedgerModal';
 import { useAuth } from '../../../context/AuthContext';
+import { useExport } from '../../../context/ExportContext';
 
 import { useToast } from '../../../context/ToastContext';
 
 export const StockItemsPage = () => {
   const { hasPermission, user } = useAuth();
   const toast = useToast();
+  const { exportData } = useExport();
 
   const canCreate = hasPermission('stock-items.create');
   const canEdit = hasPermission('stock-items.edit');
@@ -213,9 +215,29 @@ export const StockItemsPage = () => {
         statusOptions={statusOptions}
         onRefresh={fetchItems}
         loading={loading}
+        onExport={() => {
+          const dataToExport = filteredItems.map(i => ({
+            name: i.itemName,
+            category: i.categoryName || 'General',
+            sku: i.sku || 'N/A',
+            qty: i.quantityOnHand || 0,
+            cost: Number(i.costPrice || 0).toFixed(2),
+            retail: Number(i.retailPrice || 0).toFixed(2),
+            status: i.status || 'Active'
+          }));
+          exportData(dataToExport, [
+            { header: 'Item Name', key: 'name' },
+            { header: 'Category', key: 'category' },
+            { header: 'SKU', key: 'sku' },
+            { header: 'Qty On Hand', key: 'qty' },
+            { header: 'Cost Price ($)', key: 'cost' },
+            { header: 'Retail Price ($)', key: 'retail' },
+            { header: 'Status', key: 'status' }
+          ], `Stock_Items_${new Date().toISOString().substring(0, 10)}.xlsx`);
+        }}
       />
 
-      <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6">
+      <div className="p-4 sm:p-6 lg:p-8 w-full max-w-[1600px] mx-auto space-y-6 print-hide-on-modal">
         {/* Active Warehouse Indicator & Selector */}
         <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3.5 px-5 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex items-center gap-3">
@@ -318,24 +340,61 @@ export const StockItemsPage = () => {
           </div>
         </div>
 
-        {/* Category Pills Filter */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1 shrink-0 mr-1">
-            <Filter className="w-3.5 h-3.5 text-slate-400" /> Category:
-          </span>
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setCategoryFilter(cat)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
-                categoryFilter === cat
-                  ? 'bg-[#2089C8] text-white border-[#155e89] shadow-xs'
-                  : 'bg-white text-slate-600 border-slate-200 hover:bg-sky-50 hover:text-[#2089C8] hover:border-sky-200'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
+        {/* Category Filter + Export Toolbar */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-3.5 px-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Category Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none flex-1">
+            <span className="text-xs font-semibold text-slate-500 flex items-center gap-1 shrink-0 mr-1 whitespace-nowrap">
+              <Filter className="w-3.5 h-3.5 text-slate-400" /> Category:
+            </span>
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setCategoryFilter(cat)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer border ${
+                  categoryFilter === cat
+                    ? 'bg-[#2089C8] text-white border-[#155e89] shadow-xs'
+                    : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-sky-50 hover:text-[#2089C8] hover:border-sky-200'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Export Button */}
+          <button
+            onClick={() => {
+              const dataToExport = filteredItems.map(i => ({
+                name: i.itemName,
+                category: i.categoryName || 'General',
+                sku: i.sku || 'N/A',
+                qty: i.quantityOnHand || 0,
+                unit: i.unit || 'PCS',
+                cost: Number(i.costPrice || 0).toFixed(2),
+                retail: Number(i.retailPrice || 0).toFixed(2),
+                minStock: i.minStockLevel || i.reorderLevel || 0,
+                warehouse: i.warehouseName || 'Main Warehouse',
+                status: i.status || 'Active'
+              }));
+              exportData(dataToExport, [
+                { header: 'Item Name', key: 'name' },
+                { header: 'Category', key: 'category' },
+                { header: 'SKU', key: 'sku' },
+                { header: 'Qty On Hand', key: 'qty' },
+                { header: 'Unit', key: 'unit' },
+                { header: 'Cost Price ($)', key: 'cost' },
+                { header: 'Retail Price ($)', key: 'retail' },
+                { header: 'Min Stock Level', key: 'minStock' },
+                { header: 'Warehouse', key: 'warehouse' },
+                { header: 'Status', key: 'status' }
+              ], `Stock_Items_${categoryFilter !== 'ALL' ? categoryFilter + '_' : ''}${new Date().toISOString().substring(0, 10)}.xlsx`);
+            }}
+            className="shrink-0 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 transition-colors cursor-pointer shadow-sm"
+          >
+            <ArrowUpDown className="w-3.5 h-3.5" />
+            Export to Excel
+          </button>
         </div>
 
         {/* Main Content Area */}

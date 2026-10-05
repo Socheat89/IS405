@@ -165,7 +165,7 @@ public class InventoryController : ControllerBase
     {
         var userId = backend.Services.Permission.PermissionChecker.GetUserId(User);
         if (userId == null) return Unauthorized();
-        if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(_context, userId.Value, "stock.view", "stock-items.view", "warehouses.view", "transfers.view"))
+        if (!await backend.Services.Permission.PermissionChecker.HasPermissionAsync(_context, userId.Value, "stock.view", "stock-items.view", "warehouses.view", "transfers.view", "sales.view", "sales.create", "sales.manage"))
         {
             return StatusCode(StatusCodes.Status403Forbidden, new { message = "Forbidden: Insufficient permissions for inventory stocks." });
         }
