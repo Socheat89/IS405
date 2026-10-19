@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Grid, ShieldCheck, User, LogOut, Settings, Bell, Search, Layers, Command, Activity, ChevronDown, Zap, Globe } from 'lucide-react';
+import { Grid, ShieldCheck, User, LogOut, Settings, Bell, Search, Layers, Command, Activity, ChevronDown, Zap, Globe, QrCode } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { QrScannerModal } from './QrScannerModal';
 
 export const Navbar = ({ activeApp, setActiveApp, onOpenLauncher }) => {
   const { user, logout, canAccessApp } = useAuth();
   const { lang, setLang, supportedLanguages } = useLanguage();
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showLangDropdown, setShowLangDropdown] = useState(false);
+  const [showQrScanner, setShowQrScanner] = useState(false);
 
   const activeLabel = {
     stock:     'Stock Management',
@@ -59,6 +61,16 @@ export const Navbar = ({ activeApp, setActiveApp, onOpenLauncher }) => {
           <Activity className="w-3.5 h-3.5 text-[#2089C8]" />
           <span>Live</span>
         </div>
+
+        {/* Scan QR Login Quick Action */}
+        <button
+          onClick={() => setShowQrScanner(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100/80 border border-emerald-200 text-xs font-semibold text-emerald-700 transition-all cursor-pointer shadow-2xs"
+          title={lang === 'km' ? 'ស្កេន QR ចូល Desktop' : 'Scan QR to Login Desktop'}
+        >
+          <QrCode className="w-3.5 h-3.5 text-emerald-600" />
+          <span className="hidden sm:inline font-bold text-[11px]">{lang === 'km' ? 'ស្កេន QR' : 'Scan QR'}</span>
+        </button>
 
         {/* Language Selector Dropdown */}
         <div className="relative">
@@ -152,6 +164,16 @@ export const Navbar = ({ activeApp, setActiveApp, onOpenLauncher }) => {
               {/* Menu items */}
               <div className="py-1.5 px-1.5">
                 <button
+                  onClick={() => { setShowQrScanner(true); setShowUserDropdown(false); }}
+                  className="w-full text-left px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer group"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-emerald-100 group-hover:bg-emerald-200 flex items-center justify-center transition-colors">
+                    <QrCode className="w-3.5 h-3.5 text-emerald-600" />
+                  </div>
+                  {lang === 'km' ? 'ស្កេន QR ចូល Desktop' : 'Scan QR to Login Desktop'}
+                </button>
+
+                <button
                   onClick={() => { setActiveApp('security'); setShowUserDropdown(false); }}
                   className="w-full text-left px-3 py-2.5 text-xs font-semibold text-slate-700 hover:bg-sky-50 hover:text-[#2089C8] rounded-xl flex items-center gap-2.5 transition-colors cursor-pointer group"
                 >
@@ -202,6 +224,12 @@ export const Navbar = ({ activeApp, setActiveApp, onOpenLauncher }) => {
           )}
         </div>
       </div>
+
+      {/* In-app QR Scanner Modal for mobile/phone approval */}
+      <QrScannerModal
+        isOpen={showQrScanner}
+        onClose={() => setShowQrScanner(false)}
+      />
     </header>
   );
 };

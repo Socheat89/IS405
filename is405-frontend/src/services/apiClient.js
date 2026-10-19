@@ -27,7 +27,7 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response) {
       if (error.response.status === 401) {
-        const isAuthFlow = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/2fa');
+        const isAuthFlow = error.config?.url?.includes('/auth/') || error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/2fa') || error.config?.url?.includes('/auth/qr');
         if (!isAuthFlow) {
           console.warn('Unauthorized access or invalid token.');
           window.dispatchEvent(new Event('auth_unauthorized'));

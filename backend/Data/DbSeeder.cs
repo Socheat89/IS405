@@ -429,6 +429,9 @@ public static class DbSeeder
                     ""Notes"" TEXT NULL,
                     ""CreatedByUserId"" INTEGER NULL,
                     ""CreatedByUsername"" TEXT NULL,
+                    ""ConfirmedByUserId"" INTEGER NULL,
+                    ""ConfirmedByUsername"" TEXT NULL,
+                    ""ConfirmedAtUtc"" TEXT NULL,
                     ""CreatedAtUtc"" TEXT NOT NULL,
                     CONSTRAINT ""FK_SalesReturns_SalesOrders_SalesOrderId"" FOREIGN KEY (""SalesOrderId"") REFERENCES ""SalesOrders"" (""Id"") ON DELETE CASCADE,
                     CONSTRAINT ""FK_SalesReturns_Customers_CustomerId"" FOREIGN KEY (""CustomerId"") REFERENCES ""Customers"" (""Id"") ON DELETE RESTRICT,
@@ -457,6 +460,21 @@ public static class DbSeeder
             try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD COLUMN \"ConfirmedByUserId\" INTEGER NULL;"); } catch { }
             try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD COLUMN \"ConfirmedByUsername\" TEXT NULL;"); } catch { }
             try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD COLUMN \"ConfirmedAtUtc\" TEXT NULL;"); } catch { }
+        }
+
+        // Safe ALTER columns for Oracle DB upgrades
+        if (context.Database.ProviderName?.Contains("Oracle", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD (\"InvitationToken\" NVARCHAR2(500) NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD (\"InvitationExpiresAtUtc\" TIMESTAMP WITH TIME ZONE NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"Users\" ADD (\"MustSetPassword\" NUMBER(1) DEFAULT 0 NOT NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"StockItems\" ADD (\"Brand\" NVARCHAR2(256) NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"StockItems\" ADD (\"MaxStockLevel\" NUMBER(10) DEFAULT 100 NOT NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"StockMovements\" ADD (\"ReferenceType\" NVARCHAR2(256) NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"StockMovements\" ADD (\"WarehouseId\" NUMBER(10) NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD (\"ConfirmedByUserId\" NUMBER(10) NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD (\"ConfirmedByUsername\" NVARCHAR2(256) NULL)"); } catch { }
+            try { await context.Database.ExecuteSqlRawAsync("ALTER TABLE \"SalesReturns\" ADD (\"ConfirmedAtUtc\" TIMESTAMP WITH TIME ZONE NULL)"); } catch { }
         }
 
         var passwordHasher = new PasswordHasher<AppUser>();

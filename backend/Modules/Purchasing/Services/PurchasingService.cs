@@ -580,7 +580,7 @@ public class PurchasingService : IPurchasingService
             WarehouseId = warehouseId,
             ReturnDateUtc = DateTimeOffset.UtcNow,
             Status = "COMPLETED",
-            Reason = request.Reason.Trim(),
+            Reason = string.IsNullOrWhiteSpace(request.Reason) ? "Supplier return" : request.Reason.Trim(),
             Notes = request.Notes?.Trim(),
             CreatedByUserId = userId,
             CreatedByUsername = username,

@@ -267,7 +267,7 @@ public class PurchaseReturnsController : ControllerBase
         }
         catch (Exception ex)
         {
-            return BadRequest(new { message = ex.Message });
+            return BadRequest(new { message = ex.GetBaseException().Message });
         }
     }
 

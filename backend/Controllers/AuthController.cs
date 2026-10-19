@@ -1,10 +1,13 @@
 using System.Security.Claims;
 using backend.Data;
+using backend.Models.Data;
 using backend.Models.Request;
 using backend.Modules.Audit.Services;
 using backend.Services;
+using backend.Services.QrAuth;
 using backend.Services.TwoFactor;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -19,15 +22,25 @@ public class AuthController : ControllerBase
     private readonly IUserService _userService;
     private readonly ITwoFactorService _twoFactorService;
     private readonly IAuditService _auditService;
+    private readonly IQrLoginService _qrLoginService;
+    private readonly ITokenService _tokenService;
+    private readonly AppDbContext _context;
+    private readonly PasswordHasher<AppUser> _passwordHasher = new();
 
     public AuthController(
         IUserService userService,
         ITwoFactorService twoFactorService,
-        IAuditService auditService)
+        IAuditService auditService,
+        IQrLoginService qrLoginService,
+        ITokenService tokenService,
+        AppDbContext context)
     {
         _userService = userService;
         _twoFactorService = twoFactorService;
         _auditService = auditService;
+        _qrLoginService = qrLoginService;
+        _tokenService = tokenService;
+        _context = context;
     }
 
     [HttpPost("register")]
@@ -371,6 +384,294 @@ public class AuthController : ControllerBase
             allowedWarehouseIds = allowedWarehouseIds,
             defaultWarehouseId = userWarehouses.FirstOrDefault(w => w.isDefault)?.id ?? userWarehouses.FirstOrDefault()?.id
         });
+    }
+
+    [HttpPost("qr/generate")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(QrGenerateResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GenerateQr(
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] QrGenerateRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        string baseUrl = request?.ClientBaseUrl?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            var origin = Request.Headers.Origin.FirstOrDefault()
+                      ?? Request.Headers.Referer.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(origin))
+            {
+                baseUrl = origin.TrimEnd('/');
+            }
+            else
+            {
+                var scheme = Request.Scheme ?? "http";
+                var host = Request.Headers.Host.FirstOrDefault() ?? "localhost:5173";
+                baseUrl = $"{scheme}://{host}";
+            }
+        }
+
+        var session = _qrLoginService.CreateSession(clientIp, userAgent, baseUrl);
+
+        await _auditService.LogAsync(
+            action: "AUTH_QR_LOGIN_INITIATED",
+            entityName: "AppUser",
+            entityId: null,
+            description: $"QR login session initiated from IP: {clientIp}",
+            userId: null,
+            username: null,
+            ipAddress: clientIp,
+            cancellationToken: cancellationToken);
+
+        var expiresIn = (int)Math.Max(0, (session.ExpiresAtUtc - DateTimeOffset.UtcNow).TotalSeconds);
+
+        return Ok(new QrGenerateResponse
+        {
+            QrToken = session.QrToken,
+            ApprovalUrl = session.ApprovalUrl ?? $"{baseUrl}/#qr-approve?token={session.QrToken}",
+            QrCodeDataUrl = session.QrCodeDataUrl,
+            ExpiresAtUtc = session.ExpiresAtUtc,
+            ExpiresInSeconds = expiresIn
+        });
+    }
+
+    [HttpGet("qr/status")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(QrStatusResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetQrStatus(
+        [FromQuery] string qrToken,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(qrToken))
+        {
+            return BadRequest(new { message = "qrToken is required" });
+        }
+
+        var session = _qrLoginService.GetSession(qrToken);
+        if (session == null)
+        {
+            return NotFound(new { message = "QR session not found or expired" });
+        }
+
+        if (session.Status == "Approved")
+        {
+            UserResponse? userResponse = null;
+            if (session.ApprovedUserId.HasValue && !string.IsNullOrEmpty(session.ApprovedUsername))
+            {
+                userResponse = new UserResponse(
+                    session.ApprovedUserId.Value,
+                    session.ApprovedUsername,
+                    session.ApprovedEmail ?? $"{session.ApprovedUsername}@company.com"
+                );
+            }
+
+            return Ok(new QrStatusResponse
+            {
+                Status = "Approved",
+                AccessToken = session.AccessToken,
+                User = userResponse,
+                Message = "Login approved by phone",
+                ExpiresAtUtc = session.AccessTokenExpiresAt
+            });
+        }
+
+        return Ok(new QrStatusResponse
+        {
+            Status = session.Status,
+            AccessToken = null,
+            User = null,
+            Message = session.Status switch
+            {
+                "Pending" => "Waiting for phone scan...",
+                "Scanned" => "QR scanned! Awaiting approval on phone...",
+                "Expired" => "QR code expired. Please generate a new one.",
+                "Rejected" => session.RejectReason ?? "Login request was rejected.",
+                _ => session.Status
+            },
+            ExpiresAtUtc = session.ExpiresAtUtc
+        });
+    }
+
+    [HttpGet("qr/session-info")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(QrSessionInfoResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public IActionResult GetQrSessionInfo([FromQuery] string qrToken)
+    {
+        if (string.IsNullOrWhiteSpace(qrToken))
+        {
+            return BadRequest(new { message = "qrToken is required" });
+        }
+
+        var session = _qrLoginService.GetSession(qrToken);
+        if (session == null)
+        {
+            return NotFound(new { message = "QR session not found or expired" });
+        }
+
+        if (session.Status == "Pending")
+        {
+            _qrLoginService.MarkScanned(qrToken, HttpContext.Connection.RemoteIpAddress?.ToString());
+        }
+
+        return Ok(new QrSessionInfoResponse
+        {
+            QrToken = session.QrToken,
+            Status = session.Status,
+            DeviceIp = session.DeviceIp,
+            UserAgent = session.UserAgent,
+            CreatedAtUtc = session.CreatedAtUtc,
+            ExpiresAtUtc = session.ExpiresAtUtc,
+            IsExpired = DateTimeOffset.UtcNow > session.ExpiresAtUtc
+        });
+    }
+
+    [HttpPost("qr/scan")]
+    [AllowAnonymous]
+    public IActionResult MarkQrScanned([FromBody] QrApproveRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request?.QrToken))
+        {
+            return BadRequest(new { message = "qrToken is required" });
+        }
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var success = _qrLoginService.MarkScanned(request.QrToken, ip);
+        return Ok(new { success });
+    }
+
+    [HttpPost("qr/approve")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ApproveQr(
+        [FromBody] QrApproveRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request?.QrToken))
+        {
+            return BadRequest(new { message = "qrToken is required" });
+        }
+
+        var session = _qrLoginService.GetSession(request.QrToken);
+        if (session == null)
+        {
+            return NotFound(new { message = "QR session expired or not found" });
+        }
+
+        if (session.Status == "Expired" || DateTimeOffset.UtcNow > session.ExpiresAtUtc)
+        {
+            return BadRequest(new { message = "This QR code has expired. Please refresh the QR code on desktop." });
+        }
+
+        if (session.Status == "Approved")
+        {
+            return BadRequest(new { message = "This QR code has already been approved." });
+        }
+
+        AppUser? user = null;
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        var currentUserId = GetCurrentUserId();
+        if (currentUserId.HasValue)
+        {
+            user = await _context.Users
+                .Include(u => u.UserRoles)
+                .ThenInclude(ur => ur.Role)
+                .FirstOrDefaultAsync(u => u.Id == currentUserId.Value, cancellationToken);
+        }
+        else if (!string.IsNullOrWhiteSpace(request.Username) && !string.IsNullOrWhiteSpace(request.Password))
+        {
+            var usernameTrimmed = request.Username.Trim().ToLowerInvariant();
+            user = await _context.Users
+                .Include(u => u.UserRoles)
+                .ThenInclude(ur => ur.Role)
+                .FirstOrDefaultAsync(u => u.Username.ToLower() == usernameTrimmed || u.Email.ToLower() == usernameTrimmed, cancellationToken);
+
+            if (user == null || !user.IsActive)
+            {
+                return Unauthorized(new { message = "Invalid username or password" });
+            }
+
+            var verifyResult = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+            if (verifyResult == PasswordVerificationResult.Failed)
+            {
+                return Unauthorized(new { message = "Invalid username or password" });
+            }
+        }
+        else
+        {
+            return Unauthorized(new { message = "Authentication required to approve login." });
+        }
+
+        if (user == null || !user.IsActive)
+        {
+            return Unauthorized(new { message = "User not found or account is deactivated" });
+        }
+
+        if (user.LockoutEndUtc.HasValue && user.LockoutEndUtc.Value > DateTimeOffset.UtcNow)
+        {
+            return StatusCode(StatusCodes.Status423Locked, new { message = "Account is temporarily locked" });
+        }
+
+        var roles = user.UserRoles
+            .Where(ur => ur.Role != null && ur.Role.IsActive)
+            .Select(ur => ur.Role.Code)
+            .ToList();
+
+        var (accessToken, expiresAt) = _tokenService.GenerateAccessToken(user, roles);
+
+        var approved = _qrLoginService.ApproveSession(request.QrToken, user, accessToken, expiresAt);
+        if (!approved)
+        {
+            return BadRequest(new { message = "Could not approve session. It may have expired." });
+        }
+
+        await _auditService.LogAsync(
+            action: "AUTH_QR_LOGIN_APPROVED",
+            entityName: "AppUser",
+            entityId: user.Id.ToString(),
+            description: $"QR login approved by user '{user.Username}' from IP {ipAddress}",
+            userId: user.Id,
+            username: user.Username,
+            ipAddress: ipAddress,
+            cancellationToken: cancellationToken);
+
+        return Ok(new
+        {
+            success = true,
+            message = "QR Login approved successfully",
+            username = user.Username,
+            roles = roles
+        });
+    }
+
+    [HttpPost("qr/reject")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RejectQr(
+        [FromBody] QrRejectRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request?.QrToken))
+        {
+            return BadRequest(new { message = "qrToken is required" });
+        }
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        _qrLoginService.RejectSession(request.QrToken, request.Reason);
+
+        await _auditService.LogAsync(
+            action: "AUTH_QR_LOGIN_REJECTED",
+            entityName: "AppUser",
+            entityId: null,
+            description: $"QR login request was rejected. Reason: {request.Reason ?? "Rejected by user"}",
+            userId: GetCurrentUserId(),
+            username: GetCurrentUsername(),
+            ipAddress: ip,
+            cancellationToken: cancellationToken);
+
+        return Ok(new { success = true, message = "Login request rejected" });
     }
 
     private int? GetCurrentUserId()

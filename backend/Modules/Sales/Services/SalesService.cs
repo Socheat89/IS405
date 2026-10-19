@@ -707,7 +707,7 @@ public class SalesService : ISalesService
             WarehouseId = warehouseId,
             ReturnDateUtc = DateTimeOffset.UtcNow,
             Status = "PENDING", // Initial status awaiting stock confirmation
-            Reason = request.Reason.Trim(),
+            Reason = string.IsNullOrWhiteSpace(request.Reason) ? "Customer return" : request.Reason.Trim(),
             Notes = request.Notes?.Trim(),
             CreatedByUserId = userId,
             CreatedByUsername = username,

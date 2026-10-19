@@ -27,6 +27,12 @@ export const API_CONFIG = {
       ENABLE_2FA: '/auth/2fa/enable',
       VERIFY_2FA_LOGIN: '/auth/2fa/verify-login',
       DISABLE_2FA: '/auth/2fa/disable',
+      QR_GENERATE: '/auth/qr/generate',
+      QR_STATUS: '/auth/qr/status',
+      QR_SESSION_INFO: '/auth/qr/session-info',
+      QR_SCAN: '/auth/qr/scan',
+      QR_APPROVE: '/auth/qr/approve',
+      QR_REJECT: '/auth/qr/reject',
     },
     // Stock Management Microservice
     STOCK: {

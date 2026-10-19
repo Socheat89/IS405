@@ -503,51 +503,70 @@ input[type="checkbox"] { accent-color: var(--brand-600); cursor: pointer; }
   }
 
   /* 2. Hide background page layout when printing any modal / voucher */
+  body.printing-modal {
+    visibility: hidden !important;
+    background: #ffffff !important;
+  }
+
   body.printing-modal header,
   body.printing-modal nav,
   body.printing-modal aside,
   body.printing-modal .erp-navbar,
   body.printing-modal .erp-control-panel,
   body.printing-modal .module-tab-bar,
-  body.printing-modal .print-hide-on-modal,
-  body.printing-modal #root > div > header,
-  body.printing-modal #root > div > main > div > div:not(:has(.invoice-modal-card)):not(:has(.item-ledger-modal-card)):not(:has([class*="modal-card"])) {
+  body.printing-modal .print-hide-on-modal {
     display: none !important;
   }
 
-  /* 3. Remove modal backdrop, overlay styling, centering, and gray shadows on paper */
-  .invoice-modal-backdrop,
-  .item-ledger-modal-backdrop,
-  div[class*="backdrop"] {
-    position: static !important;
-    inset: auto !important;
-    background: #ffffff !important;
-    backdrop-filter: none !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    display: block !important;
+  /* 3. Make ONLY the modal backdrop/card visible at top-left during print */
+  body.printing-modal .invoice-modal-backdrop,
+  body.printing-modal .item-ledger-modal-backdrop,
+  body.printing-modal [class*="modal-backdrop"] {
+    visibility: visible !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
     width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  body.printing-modal .invoice-modal-card,
+  body.printing-modal .item-ledger-modal-card,
+  body.printing-modal [class*="modal-card"] {
+    visibility: visible !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
     height: auto !important;
     max-height: none !important;
     overflow: visible !important;
-    z-index: auto !important;
-    box-shadow: none !important;
-  }
-
-  .invoice-modal-card,
-  .item-ledger-modal-card {
-    position: static !important;
+    background: #ffffff !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
-    max-width: 100% !important;
-    width: 100% !important;
-    height: auto !important;
-    max-height: none !important;
     padding: 0 !important;
     margin: 0 !important;
-    overflow: visible !important;
-    background: #ffffff !important;
+  }
+
+  body.printing-modal .invoice-modal-card *,
+  body.printing-modal .item-ledger-modal-card *,
+  body.printing-modal [class*="modal-card"] * {
+    visibility: visible !important;
+  }
+
+  /* Hide print-hidden elements even inside modal */
+  body.printing-modal .print-hidden,
+  body.printing-modal .print\:hidden,
+  body.printing-modal [data-no-print] {
+    display: none !important;
+    visibility: hidden !important;
   }
 
   .invoice-printable-content {

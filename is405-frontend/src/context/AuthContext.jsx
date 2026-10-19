@@ -388,6 +388,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const loginWithQr = (accessToken, userInfo) => {
+    completeAuthentication(accessToken, userInfo || {
+      username: 'User',
+      email: 'user@company.com'
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -400,6 +407,8 @@ export const AuthProvider = ({ children }) => {
         error,
         setError,
         login: handleLogin,
+        loginWithQr,
+        completeAuthentication,
         confirm2FA: handleConfirm2FA,
         verify2FA: handleVerify2FA,
         logout,

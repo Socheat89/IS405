@@ -107,5 +107,73 @@ export const authService = {
     } catch (error) {
       throw error.response?.data?.message || error.message || 'Disabling 2FA failed';
     }
+  },
+
+  // QR Code Login: Generate new QR session
+  async generateQrLogin(clientBaseUrl) {
+    try {
+      const payload = clientBaseUrl ? { clientBaseUrl } : {};
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_GENERATE, payload);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to generate QR login session';
+    }
+  },
+
+  // QR Code Login: Check polling status
+  async getQrLoginStatus(qrToken) {
+    try {
+      const response = await apiClient.get(API_CONFIG.ENDPOINTS.AUTH.QR_STATUS, {
+        params: { qrToken }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to check QR login status';
+    }
+  },
+
+  // QR Code Login: Get session info on phone
+  async getQrSessionInfo(qrToken) {
+    try {
+      const response = await apiClient.get(API_CONFIG.ENDPOINTS.AUTH.QR_SESSION_INFO, {
+        params: { qrToken }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to retrieve QR session info';
+    }
+  },
+
+  // QR Code Login: Mark scanned
+  async markQrScanned(qrToken) {
+    try {
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_SCAN, { qrToken });
+      return response.data;
+    } catch (error) {
+      return { success: false };
+    }
+  },
+
+  // QR Code Login: Approve login from phone
+  async approveQrLogin(qrToken, username, password) {
+    try {
+      const payload = { qrToken };
+      if (username) payload.username = username;
+      if (password) payload.password = password;
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_APPROVE, payload);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to approve QR login';
+    }
+  },
+
+  // QR Code Login: Reject login from phone
+  async rejectQrLogin(qrToken, reason) {
+    try {
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_REJECT, { qrToken, reason });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to reject QR login';
+    }
   }
 };

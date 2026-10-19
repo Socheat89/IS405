@@ -12,6 +12,7 @@ import { LoginPage } from './pages/auth/LoginPage';
 import { SetupTwoFactorPage } from './pages/auth/SetupTwoFactorPage';
 import { VerifyTwoFactorPage } from './pages/auth/VerifyTwoFactorPage';
 import { SetPasswordPage } from './pages/auth/SetPasswordPage';
+import { QrApprovalPage } from './pages/auth/QrApprovalPage';
 
 // Microservices Module Pages (each module has its own sub-navigation)
 import { DashboardPage }    from './pages/dashboard/DashboardPage';
@@ -28,6 +29,7 @@ import { ForbiddenPage }    from './pages/common/ForbiddenPage';
 const getInitialApp = () => {
   const hash = window.location.hash.replace(/^#\/?/, '').trim();
   if (hash.startsWith('set-password')) return 'set-password';
+  if (hash.startsWith('qr-approve') || window.location.search.includes('token=')) return 'qr-approve';
   if (hash) return hash;
   return localStorage.getItem('is405_active_app') || 'dashboard';
 };
@@ -73,6 +75,16 @@ const MainApp = () => {
   // Set Password from Invitation Link route
   if (activeApp?.startsWith('set-password') || window.location.hash.includes('set-password')) {
     return <SetPasswordPage onNavigateLogin={() => navigateToApp('dashboard')} />;
+  }
+
+  // QR Login Approval Route (When scanned from phone camera)
+  if (activeApp?.startsWith('qr-approve') || window.location.hash.includes('qr-approve')) {
+    return (
+      <QrApprovalPage
+        onNavigateLogin={() => navigateToApp('dashboard')}
+        onNavigateDashboard={() => navigateToApp('dashboard')}
+      />
+    );
   }
 
   // Auth Flow Router according to Backend requirements
