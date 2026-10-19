@@ -1,12 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Monitor, Clock, Globe, CheckCircle2, XCircle, AlertTriangle, ArrowRight, Lock, User, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Monitor, Clock, CheckCircle2, XCircle, AlertTriangle, Lock, User, RefreshCw, Smartphone, KeyRound } from 'lucide-react';
 import { authService } from '../../services/auth/authService';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
+const TRUSTED_DEVICE_KEY = 'is405_trusted_device';
+
+function getBrowserDeviceName() {
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return 'Android Device';
+  if (/iPhone/i.test(ua)) return 'Apple iPhone';
+  if (/iPad/i.test(ua)) return 'Apple iPad';
+  if (/Windows/i.test(ua)) return 'Windows PC';
+  if (/Macintosh/i.test(ua)) return 'Mac Device';
+  return 'Mobile Browser';
+}
+
 export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
-  const { user, token: authToken, loginWithQr } = useAuth();
-  const { t, isKhmer } = useLanguage();
+  const { user: activeContextUser, token: authToken } = useAuth();
+  const { t } = useLanguage();
 
   const [qrToken, setQrToken] = useState('');
   const [sessionInfo, setSessionInfo] = useState(null);
@@ -16,15 +28,19 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
   const [status, setStatus] = useState('CHECKING'); // CHECKING, READY, APPROVED, REJECTED, EXPIRED, ERROR
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Fallback login form for unauthenticated phone users
+  // Trusted Device Pairing state
+  const [trustedDevice, setTrustedDevice] = useState(null);
+  const [forceSwitchAccount, setForceSwitchAccount] = useState(false);
+
+  // First-time or new device credentials form
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [trustThisDevice, setTrustThisDevice] = useState(true);
 
   // Extract qrToken from URL hash or query params
   useEffect(() => {
     const parseToken = () => {
-      // Check query in hash: #qr-approve?token=xyz or /?token=xyz
       const hash = window.location.hash;
       const search = window.location.search;
 
@@ -50,26 +66,56 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
       return;
     }
 
-    // Fetch session details from backend
-    loadSessionInfo(token);
+    loadSessionAndCheckDevice(token);
   }, []);
 
-  const loadSessionInfo = async (token) => {
+  const loadSessionAndCheckDevice = async (token) => {
     setLoading(true);
     setErrorMessage('');
     try {
+      // 1. Fetch QR session status
       const data = await authService.getQrSessionInfo(token);
       setSessionInfo(data);
 
       if (data.status === 'Approved') {
         setStatus('APPROVED');
+        setLoading(false);
+        return;
       } else if (data.status === 'Rejected') {
         setStatus('REJECTED');
+        setLoading(false);
+        return;
       } else if (data.status === 'Expired' || data.isExpired) {
         setStatus('EXPIRED');
-      } else {
-        setStatus('READY');
+        setLoading(false);
+        return;
       }
+
+      // 2. Check if this device was already paired and remembered
+      let savedDevice = null;
+      try {
+        const raw = localStorage.getItem(TRUSTED_DEVICE_KEY);
+        if (raw) savedDevice = JSON.parse(raw);
+      } catch (e) {}
+
+      if (savedDevice?.deviceId && savedDevice?.deviceSecret) {
+        const checkRes = await authService.checkTrustedDevice(token, savedDevice.deviceId, savedDevice.deviceSecret);
+        if (checkRes.isTrusted && checkRes.user) {
+          setTrustedDevice({
+            ...savedDevice,
+            user: checkRes.user,
+            deviceName: checkRes.deviceName || savedDevice.deviceName
+          });
+        } else {
+          // Device secret expired or invalid on backend
+          setTrustedDevice(null);
+          localStorage.removeItem(TRUSTED_DEVICE_KEY);
+        }
+      } else {
+        setTrustedDevice(null);
+      }
+
+      setStatus('READY');
     } catch (err) {
       setStatus('ERROR');
       setErrorMessage(typeof err === 'string' ? err : err?.message || t('Failed to load QR session', 'មិនអាចទាញទិន្នន័យ QR Session បានទេ'));
@@ -78,25 +124,74 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
     }
   };
 
-  const handleApprove = async (e) => {
-    if (e) e.preventDefault();
-    if (!qrToken) return;
+  // 1-Tap Approve for Trusted Paired Device
+  const handleTrustedDeviceApprove = async () => {
+    if (!qrToken || !trustedDevice) return;
 
     setApproving(true);
     setErrorMessage('');
 
     try {
-      const isAlreadyLoggedIn = Boolean(user && authToken);
-      const approveUsername = isAlreadyLoggedIn ? undefined : username.trim();
-      const approvePassword = isAlreadyLoggedIn ? undefined : password.trim();
+      await authService.approveQrLogin(qrToken, {
+        deviceId: trustedDevice.deviceId,
+        deviceSecret: trustedDevice.deviceSecret
+      });
+      setStatus('APPROVED');
+    } catch (err) {
+      const msg = typeof err === 'string' ? err : err?.message || t('Approval failed', 'ការយល់ព្រមបានបរាជ័យ');
+      setErrorMessage(msg);
+      // If device pairing was revoked or rejected on server, fallback to credential login
+      if (String(msg).toLowerCase().includes('device') || String(msg).toLowerCase().includes('pairing')) {
+        setTrustedDevice(null);
+        localStorage.removeItem(TRUSTED_DEVICE_KEY);
+      }
+    } finally {
+      setApproving(false);
+    }
+  };
 
-      if (!isAlreadyLoggedIn && (!approveUsername || !approvePassword)) {
-        setErrorMessage(t('Please enter your username and password to approve.', 'សូមវាយឈ្មោះគណនី និងលេខសម្ងាត់ដើម្បីយល់ព្រម'));
-        setApproving(false);
-        return;
+  // First-time or new device: Sign In and pair device
+  const handleCredentialApprove = async (e) => {
+    if (e) e.preventDefault();
+    if (!qrToken) return;
+
+    if (!username.trim() || !password.trim()) {
+      setErrorMessage(t('Please enter your username and password.', 'សូមវាយឈ្មោះគណនី និងលេខសម្ងាត់'));
+      return;
+    }
+
+    setApproving(true);
+    setErrorMessage('');
+
+    try {
+      const res = await authService.approveQrLogin(qrToken, {
+        username: username.trim(),
+        password: password.trim(),
+        trustThisDevice,
+        deviceName: getBrowserDeviceName()
+      });
+
+      // Save trusted device locally so next time it won't ask for username/password!
+      if (res.trustedDevice?.deviceId && res.trustedDevice?.deviceSecret) {
+        localStorage.setItem(TRUSTED_DEVICE_KEY, JSON.stringify(res.trustedDevice));
+        setTrustedDevice(res.trustedDevice);
       }
 
-      await authService.approveQrLogin(qrToken, approveUsername, approvePassword);
+      setStatus('APPROVED');
+    } catch (err) {
+      setErrorMessage(typeof err === 'string' ? err : err?.message || t('Invalid credentials or approval failed', 'ឈ្មោះគណនី ឬលេខសម្ងាត់មិនត្រឹមត្រូវ'));
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  // Approve for user already logged in with active context Bearer token
+  const handleContextApprove = async () => {
+    if (!qrToken) return;
+    setApproving(true);
+    setErrorMessage('');
+    try {
+      await authService.approveQrLogin(qrToken);
       setStatus('APPROVED');
     } catch (err) {
       setErrorMessage(typeof err === 'string' ? err : err?.message || t('Approval failed', 'ការយល់ព្រមបានបរាជ័យ'));
@@ -116,6 +211,15 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
     } finally {
       setRejecting(false);
     }
+  };
+
+  const handleForgetDevice = async () => {
+    if (trustedDevice?.deviceId) {
+      await authService.revokeTrustedDevice(trustedDevice.deviceId, trustedDevice.deviceSecret);
+    }
+    localStorage.removeItem(TRUSTED_DEVICE_KEY);
+    setTrustedDevice(null);
+    setForceSwitchAccount(true);
   };
 
   return (
@@ -143,7 +247,7 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
         {loading && (
           <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
             <div className="w-8 h-8 border-3 border-emerald-500/30 border-t-emerald-400 rounded-full animate-spin" />
-            <span className="text-xs font-medium">{t('Checking QR login session...', 'កំពុងពិនិត្យ QR Session...')}</span>
+            <span className="text-xs font-medium">{t('Checking device and QR session...', 'កំពុងពិនិត្យឧបករណ៍ និង QR Session...')}</span>
           </div>
         )}
 
@@ -173,7 +277,7 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
             <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-700/60 text-[11px] text-slate-400 mb-6">
               {t('You can close this tab on your phone now.', 'អ្នកអាចបិទផ្ទាំងទូរស័ព្ទនេះបានឥឡូវនេះ។')}
             </div>
-            {onNavigateDashboard && user && (
+            {onNavigateDashboard && activeContextUser && (
               <button
                 onClick={onNavigateDashboard}
                 className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-semibold transition-all cursor-pointer"
@@ -221,7 +325,7 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
               {t('Please refresh or generate a new QR Code on your desktop screen.', 'សូមចុចបង្កើត QR Code ថ្មីនៅលើអេក្រង់កុំព្យូទ័រ។')}
             </p>
             <button
-              onClick={() => loadSessionInfo(qrToken)}
+              onClick={() => loadSessionAndCheckDevice(qrToken)}
               className="w-full py-3 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <RefreshCw className="w-4 h-4" />
@@ -260,23 +364,102 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
               </div>
             </div>
 
-            {/* If user is already logged in on this phone */}
-            {user && authToken ? (
+            {/* ── CASE 1: TRUSTED PAIRED DEVICE (NO USERNAME & PASSWORD NEEDED! ONLY APPROVE & REJECT) ── */}
+            {trustedDevice && !forceSwitchAccount ? (
+              <div className="space-y-4 animate-scale-in">
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white font-bold text-base flex items-center justify-center shrink-0 shadow-lg shadow-emerald-600/30">
+                      {trustedDevice.user?.username ? trustedDevice.user.username.charAt(0).toUpperCase() : 'U'}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          <Smartphone className="w-3 h-3" />
+                          {t('Trusted Phone Device', 'ឧបករណ៍ទុកចិត្ត')}
+                        </span>
+                      </div>
+                      <p className="font-extrabold text-base text-white truncate mt-1">
+                        {trustedDevice.user?.username || trustedDevice.username}
+                      </p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {trustedDevice.user?.email || trustedDevice.email}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-900/60 border border-slate-700/60 rounded-xl text-[11px] text-emerald-300/90 leading-relaxed text-center">
+                  {t(
+                    'Device recognized! Tap "Approve" below to sign in instantly without password or 2FA.',
+                    'ឧបករណ៍ត្រូវបានស្គាល់! ចុច "យល់ព្រម" ខាងក្រោមដើម្បីចូលភ្លាមៗ ដោយមិនបាច់វាយលេខសម្ងាត់ និង 2FA ឡើយ។'
+                  )}
+                </div>
+
+                <div className="pt-2 flex flex-col gap-2.5">
+                  <button
+                    onClick={handleTrustedDeviceApprove}
+                    disabled={approving || rejecting}
+                    className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-sm font-bold shadow-xl shadow-emerald-600/30 hover:shadow-emerald-600/50 transition-all cursor-pointer flex items-center justify-center gap-2 border-0"
+                  >
+                    {approving ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        {t('Approving...', 'កំពុងយល់ព្រម...')}
+                      </span>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-5 h-5" />
+                        <span>{t('Approve Login (1-Tap)', '✓ យល់ព្រមឱ្យកុំព្យូទ័រចូលប្រើ')}</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleReject}
+                    disabled={approving || rejecting}
+                    className="w-full py-3 bg-slate-700/60 hover:bg-rose-600/80 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-2 border border-slate-600"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    <span>{t('Reject Request', '✕ បដិសេធ')}</span>
+                  </button>
+                </div>
+
+                {/* Option to switch user or unpair device */}
+                <div className="pt-2 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-700/50">
+                  <button
+                    type="button"
+                    onClick={() => setForceSwitchAccount(true)}
+                    className="hover:text-emerald-400 transition-colors cursor-pointer"
+                  >
+                    {t('Sign in with different account?', 'ចូលដោយគណនីផ្សេង?')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleForgetDevice}
+                    className="hover:text-rose-400 transition-colors cursor-pointer text-slate-500"
+                  >
+                    {t('Forget this device', 'ផ្តាច់ឧបករណ៍នេះ')}
+                  </button>
+                </div>
+              </div>
+            ) : activeContextUser && authToken && !forceSwitchAccount ? (
+              /* ── CASE 2: USER IS ACTIVELY LOGGED IN VIA BROWSER CONTEXT ── */
               <div className="space-y-4">
                 <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white font-bold text-sm flex items-center justify-center shrink-0 shadow-md">
-                    {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
+                    {activeContextUser.username ? activeContextUser.username.charAt(0).toUpperCase() : 'U'}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-slate-400">{t('Approve login for account:', 'យល់ព្រមចូលគណនី:')}</p>
-                    <p className="font-bold text-sm text-white truncate">{user.username}</p>
-                    <p className="text-[11px] text-slate-400 truncate">{user.email || `${user.username}@company.com`}</p>
+                    <p className="font-bold text-sm text-white truncate">{activeContextUser.username}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{activeContextUser.email || `${activeContextUser.username}@company.com`}</p>
                   </div>
                 </div>
 
                 <div className="pt-2 flex flex-col gap-2.5">
                   <button
-                    onClick={handleApprove}
+                    onClick={handleContextApprove}
                     disabled={approving || rejecting}
                     className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-600/30 hover:shadow-emerald-600/50 transition-all cursor-pointer flex items-center justify-center gap-2 border-0"
                   >
@@ -304,12 +487,12 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
                 </div>
               </div>
             ) : (
-              /* If user is not yet logged in on this phone */
-              <form onSubmit={handleApprove} className="space-y-3.5">
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300">
+              /* ── CASE 3: 1ST TIME LOGIN / NEW UNPAIRED DEVICE (MUST TYPE USERNAME & PASSWORD) ── */
+              <form onSubmit={handleCredentialApprove} className="space-y-4">
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-[11px] text-amber-300 leading-relaxed">
                   {t(
-                    'Please sign in to confirm and approve this desktop session:',
-                    'សូមវាយគណនីរបស់អ្នកដើម្បីបញ្ជាក់ និងយល់ព្រមឱ្យកុំព្យូទ័រចូលប្រើ៖'
+                    '1st time on this phone? Sign in once to pair this phone as a Trusted Device. Next time you will only need to tap Approve!',
+                    'ចូលលើកទី១ លើទូរស័ព្ទនេះ? សូមវាយគណនីម្តងដើម្បីស្គាល់ឧបករណ៍នេះ។ លើកក្រោយមិនបាច់វាយលេខសម្ងាត់ទៀតទេ គឺចុច Approve តែម្តង!'
                   )}
                 </div>
 
@@ -342,7 +525,7 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="Password"
-                      className="w-full pl-9 pr-10 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
+                      className="w-full pl-9 pr-12 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
                     />
                     <button
                       type="button"
@@ -354,16 +537,32 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
                   </div>
                 </div>
 
+                {/* Trust this device checkbox */}
+                <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer pt-1">
+                  <input
+                    type="checkbox"
+                    checked={trustThisDevice}
+                    onChange={(e) => setTrustThisDevice(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-700 text-emerald-600 focus:ring-0 cursor-pointer"
+                  />
+                  <span>
+                    {t(
+                      'Remember & pair this device (1-tap approve next time)',
+                      'ចងចាំឧបករណ៍នេះ (លើកក្រោយចូលដោយមិនបាច់វាយលេខសម្ងាត់)'
+                    )}
+                  </span>
+                </label>
+
                 <div className="pt-2 flex flex-col gap-2">
                   <button
                     type="submit"
                     disabled={approving}
-                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 transition-all cursor-pointer flex items-center justify-center gap-2 border-0"
+                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 transition-all cursor-pointer flex items-center justify-center gap-2 border-0"
                   >
                     {approving ? (
                       <span className="inline-flex items-center gap-2">
                         <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        {t('Authenticating & Approving...', 'កំពុងផ្ទៀងផ្ទាត់ និងយល់ព្រម...')}
+                        {t('Authenticating & Pairing...', 'កំពុងផ្ទៀងផ្ទាត់ និងចងចាំឧបករណ៍...')}
                       </span>
                     ) : (
                       <>
@@ -388,7 +587,7 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
 
         {/* Footer */}
         <div className="mt-6 pt-4 border-t border-slate-700/60 text-center text-[10px] text-slate-500">
-          Mekong Stock Security · Multi-Device Instant Authentication
+          Mekong Stock Security · Trusted Device Instant Authentication
         </div>
       </div>
     </div>

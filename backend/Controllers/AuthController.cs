@@ -23,6 +23,7 @@ public class AuthController : ControllerBase
     private readonly ITwoFactorService _twoFactorService;
     private readonly IAuditService _auditService;
     private readonly IQrLoginService _qrLoginService;
+    private readonly ITrustedDeviceService _trustedDeviceService;
     private readonly ITokenService _tokenService;
     private readonly AppDbContext _context;
     private readonly PasswordHasher<AppUser> _passwordHasher = new();
@@ -32,6 +33,7 @@ public class AuthController : ControllerBase
         ITwoFactorService twoFactorService,
         IAuditService auditService,
         IQrLoginService qrLoginService,
+        ITrustedDeviceService trustedDeviceService,
         ITokenService tokenService,
         AppDbContext context)
     {
@@ -39,6 +41,7 @@ public class AuthController : ControllerBase
         _twoFactorService = twoFactorService;
         _auditService = auditService;
         _qrLoginService = qrLoginService;
+        _trustedDeviceService = trustedDeviceService;
         _tokenService = tokenService;
         _context = context;
     }
@@ -543,6 +546,47 @@ public class AuthController : ControllerBase
         return Ok(new { success });
     }
 
+    [HttpPost("qr/check-device")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(CheckDeviceResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CheckDevice([FromBody] CheckDeviceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request?.DeviceId) || string.IsNullOrWhiteSpace(request?.DeviceSecret))
+        {
+            return Ok(new CheckDeviceResponse { IsTrusted = false, Message = "Device credentials missing" });
+        }
+
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var record = await _trustedDeviceService.ValidateDeviceAsync(request.DeviceId, request.DeviceSecret, ip);
+
+        if (record == null)
+        {
+            return Ok(new CheckDeviceResponse
+            {
+                IsTrusted = false,
+                Message = "This device is not recognized or has been unlinked."
+            });
+        }
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == record.UserId && u.IsActive);
+        if (user == null)
+        {
+            return Ok(new CheckDeviceResponse
+            {
+                IsTrusted = false,
+                Message = "User account not found or deactivated."
+            });
+        }
+
+        return Ok(new CheckDeviceResponse
+        {
+            IsTrusted = true,
+            User = new UserResponse(user.Id, user.Username, user.Email),
+            DeviceName = record.DeviceName,
+            Message = "Device recognized and trusted."
+        });
+    }
+
     [HttpPost("qr/approve")]
     [AllowAnonymous]
     public async Task<IActionResult> ApproveQr(
@@ -571,16 +615,34 @@ public class AuthController : ControllerBase
         }
 
         AppUser? user = null;
+        TrustedDeviceDto? pairedDevice = null;
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
 
-        var currentUserId = GetCurrentUserId();
-        if (currentUserId.HasValue)
+        // 1. Trusted Device Flow (1-tap approve without password!)
+        if (!string.IsNullOrWhiteSpace(request.DeviceId) && !string.IsNullOrWhiteSpace(request.DeviceSecret))
+        {
+            var deviceRecord = await _trustedDeviceService.ValidateDeviceAsync(request.DeviceId, request.DeviceSecret, ipAddress);
+            if (deviceRecord != null)
+            {
+                user = await _context.Users
+                    .Include(u => u.UserRoles)
+                    .ThenInclude(ur => ur.Role)
+                    .FirstOrDefaultAsync(u => u.Id == deviceRecord.UserId, cancellationToken);
+            }
+            else
+            {
+                return Unauthorized(new { message = "Device is not recognized or pairing has expired. Please log in with password." });
+            }
+        }
+        // 2. Currently authenticated Bearer token user
+        else if (GetCurrentUserId() is int currentUserId)
         {
             user = await _context.Users
                 .Include(u => u.UserRoles)
                 .ThenInclude(ur => ur.Role)
-                .FirstOrDefaultAsync(u => u.Id == currentUserId.Value, cancellationToken);
+                .FirstOrDefaultAsync(u => u.Id == currentUserId, cancellationToken);
         }
+        // 3. First-time or new device: username & password authentication
         else if (!string.IsNullOrWhiteSpace(request.Username) && !string.IsNullOrWhiteSpace(request.Password))
         {
             var usernameTrimmed = request.Username.Trim().ToLowerInvariant();
@@ -598,6 +660,26 @@ public class AuthController : ControllerBase
             if (verifyResult == PasswordVerificationResult.Failed)
             {
                 return Unauthorized(new { message = "Invalid username or password" });
+            }
+
+            // Register as trusted device if requested (default true)
+            if (request.TrustThisDevice)
+            {
+                var newDevice = await _trustedDeviceService.RegisterDeviceAsync(
+                    user.Id,
+                    user.Username,
+                    user.Email,
+                    request.DeviceName,
+                    ipAddress);
+
+                pairedDevice = new TrustedDeviceDto
+                {
+                    DeviceId = newDevice.DeviceId,
+                    DeviceSecret = newDevice.DeviceSecret,
+                    Username = user.Username,
+                    Email = user.Email,
+                    DeviceName = newDevice.DeviceName
+                };
             }
         }
         else
@@ -632,19 +714,33 @@ public class AuthController : ControllerBase
             action: "AUTH_QR_LOGIN_APPROVED",
             entityName: "AppUser",
             entityId: user.Id.ToString(),
-            description: $"QR login approved by user '{user.Username}' from IP {ipAddress}",
+            description: $"QR login approved for user '{user.Username}' (device: {request.DeviceId ?? "unpaired"}) from IP {ipAddress}",
             userId: user.Id,
             username: user.Username,
             ipAddress: ipAddress,
             cancellationToken: cancellationToken);
 
-        return Ok(new
+        return Ok(new QrApproveResponse
         {
-            success = true,
-            message = "QR Login approved successfully",
-            username = user.Username,
-            roles = roles
+            Success = true,
+            Message = "QR Login approved successfully",
+            Username = user.Username,
+            Roles = roles,
+            TrustedDevice = pairedDevice
         });
+    }
+
+    [HttpPost("qr/revoke-device")]
+    [AllowAnonymous]
+    public async Task<IActionResult> RevokeDevice([FromBody] RevokeDeviceRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request?.DeviceId))
+        {
+            return BadRequest(new { message = "DeviceId is required" });
+        }
+
+        var revoked = await _trustedDeviceService.RevokeDeviceAsync(request.DeviceId, request.DeviceSecret);
+        return Ok(new { success = revoked, message = revoked ? "Device unlinked successfully" : "Could not unlink device" });
     }
 
     [HttpPost("qr/reject")]

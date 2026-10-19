@@ -154,12 +154,32 @@ export const authService = {
     }
   },
 
-  // QR Code Login: Approve login from phone
-  async approveQrLogin(qrToken, username, password) {
+  // QR Code Login: Check if current phone is a recognized trusted device
+  async checkTrustedDevice(qrToken, deviceId, deviceSecret) {
     try {
-      const payload = { qrToken };
-      if (username) payload.username = username;
-      if (password) payload.password = password;
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_CHECK_DEVICE, {
+        qrToken,
+        deviceId,
+        deviceSecret,
+      });
+      return response.data;
+    } catch (error) {
+      return { isTrusted: false, message: error.message };
+    }
+  },
+
+  // QR Code Login: Approve login from phone (Supports credentials OR trusted device)
+  async approveQrLogin(qrToken, usernameOrOptions, password) {
+    try {
+      let payload = { qrToken };
+
+      if (typeof usernameOrOptions === 'object' && usernameOrOptions !== null) {
+        payload = { ...payload, ...usernameOrOptions };
+      } else {
+        if (usernameOrOptions) payload.username = usernameOrOptions;
+        if (password) payload.password = password;
+      }
+
       const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_APPROVE, payload);
       return response.data;
     } catch (error) {
@@ -174,6 +194,19 @@ export const authService = {
       return response.data;
     } catch (error) {
       throw error.response?.data?.message || error.message || 'Failed to reject QR login';
+    }
+  },
+
+  // QR Code Login: Unlink / forget trusted device
+  async revokeTrustedDevice(deviceId, deviceSecret) {
+    try {
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_REVOKE_DEVICE, {
+        deviceId,
+        deviceSecret,
+      });
+      return response.data;
+    } catch (error) {
+      return { success: false };
     }
   }
 };

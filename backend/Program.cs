@@ -114,6 +114,7 @@ builder.Services.AddScoped<INavigationService, NavigationService>();
 builder.Services.AddScoped<IPermissionService, PermissionService>();
 builder.Services.AddScoped<IRoleService, RoleService>();
 builder.Services.AddSingleton<backend.Services.QrAuth.IQrLoginService, backend.Services.QrAuth.QrLoginService>();
+builder.Services.AddSingleton<backend.Services.QrAuth.ITrustedDeviceService, backend.Services.QrAuth.TrustedDeviceService>();
 
 // 3b. Modular Microservices
 builder.Services.AddAuditModule();

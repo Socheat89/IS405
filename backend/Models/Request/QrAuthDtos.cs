@@ -28,6 +28,12 @@ public class QrApproveRequest
     public string QrToken { get; set; } = string.Empty;
     public string? Username { get; set; }
     public string? Password { get; set; }
+
+    // Trusted Device pairing fields
+    public string? DeviceId { get; set; }
+    public string? DeviceSecret { get; set; }
+    public bool TrustThisDevice { get; set; } = true;
+    public string? DeviceName { get; set; }
 }
 
 public class QrRejectRequest
@@ -45,4 +51,43 @@ public class QrSessionInfoResponse
     public DateTimeOffset CreatedAtUtc { get; set; }
     public DateTimeOffset ExpiresAtUtc { get; set; }
     public bool IsExpired { get; set; }
+}
+
+public class CheckDeviceRequest
+{
+    public string QrToken { get; set; } = string.Empty;
+    public string DeviceId { get; set; } = string.Empty;
+    public string DeviceSecret { get; set; } = string.Empty;
+}
+
+public class CheckDeviceResponse
+{
+    public bool IsTrusted { get; set; }
+    public UserResponse? User { get; set; }
+    public string? DeviceName { get; set; }
+    public string? Message { get; set; }
+}
+
+public class TrustedDeviceDto
+{
+    public string DeviceId { get; set; } = string.Empty;
+    public string DeviceSecret { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string? DeviceName { get; set; }
+}
+
+public class QrApproveResponse
+{
+    public bool Success { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public string? Username { get; set; }
+    public List<string>? Roles { get; set; }
+    public TrustedDeviceDto? TrustedDevice { get; set; }
+}
+
+public class RevokeDeviceRequest
+{
+    public string DeviceId { get; set; } = string.Empty;
+    public string DeviceSecret { get; set; } = string.Empty;
 }

@@ -33,6 +33,8 @@ export const API_CONFIG = {
       QR_SCAN: '/auth/qr/scan',
       QR_APPROVE: '/auth/qr/approve',
       QR_REJECT: '/auth/qr/reject',
+      QR_CHECK_DEVICE: '/auth/qr/check-device',
+      QR_REVOKE_DEVICE: '/auth/qr/revoke-device',
     },
     // Stock Management Microservice
     STOCK: {
