@@ -28,6 +28,7 @@ public class QrApproveRequest
     public string QrToken { get; set; } = string.Empty;
     public string? Username { get; set; }
     public string? Password { get; set; }
+    public string? TwoFactorCode { get; set; }
 
     // Trusted Device pairing fields
     public string? DeviceId { get; set; }
@@ -80,6 +81,7 @@ public class TrustedDeviceDto
 public class QrApproveResponse
 {
     public bool Success { get; set; }
+    public bool RequiresTwoFactor { get; set; }
     public string Message { get; set; } = string.Empty;
     public string? Username { get; set; }
     public List<string>? Roles { get; set; }
@@ -90,4 +92,25 @@ public class RevokeDeviceRequest
 {
     public string DeviceId { get; set; } = string.Empty;
     public string DeviceSecret { get; set; } = string.Empty;
+}
+
+public class TrustedDeviceSummaryDto
+{
+    public string DeviceId { get; set; } = string.Empty;
+    public string? DeviceName { get; set; }
+    public string? LastIpAddress { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset LastUsedAtUtc { get; set; }
+}
+
+public class QrSettingsResponse
+{
+    public bool SystemQrEnabled { get; set; } = true;
+    public bool UserQrEnabled { get; set; } = true;
+    public List<TrustedDeviceSummaryDto> Devices { get; set; } = [];
+}
+
+public class ToggleQrRequest
+{
+    public bool Enabled { get; set; }
 }

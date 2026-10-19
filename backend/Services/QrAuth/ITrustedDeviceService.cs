@@ -19,4 +19,10 @@ public interface ITrustedDeviceService
     Task<TrustedDeviceRecord?> ValidateDeviceAsync(string deviceId, string deviceSecret, string? ipAddress);
     Task<TrustedDeviceRecord> RegisterDeviceAsync(int userId, string username, string email, string? deviceName, string? ipAddress);
     Task<bool> RevokeDeviceAsync(string deviceId, string? deviceSecret);
+    Task<bool> RevokeAllUserDevicesAsync(int userId);
+    Task<List<TrustedDeviceRecord>> GetUserDevicesAsync(int userId);
+    Task<bool> IsSystemQrLoginEnabledAsync();
+    Task SetSystemQrLoginEnabledAsync(bool enabled);
+    Task<bool> IsUserQrLoginEnabledAsync(int userId);
+    Task SetUserQrLoginEnabledAsync(int userId, bool enabled);
 }

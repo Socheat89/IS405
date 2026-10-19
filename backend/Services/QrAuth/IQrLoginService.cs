@@ -18,6 +18,7 @@ public class QrLoginSession
     public int? ApprovedUserId { get; set; }
     public string? ApprovedUsername { get; set; }
     public string? ApprovedEmail { get; set; }
+    public bool ApprovedTwoFactorEnabled { get; set; }
     public string? AccessToken { get; set; }
     public DateTimeOffset? AccessTokenExpiresAt { get; set; }
     public string? RejectReason { get; set; }

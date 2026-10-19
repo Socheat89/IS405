@@ -12,7 +12,8 @@ import {
   Smartphone,
   Eye,
   EyeOff,
-  ArrowRight
+  ArrowRight,
+  KeyRound
 } from 'lucide-react';
 import { authService } from '../../services/auth/authService';
 import { useAuth } from '../../context/AuthContext';
@@ -51,6 +52,8 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [trustThisDevice, setTrustThisDevice] = useState(true);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [requires2FA, setRequires2FA] = useState(false);
 
   // Extract qrToken from URL hash or query params
   useEffect(() => {
@@ -173,16 +176,32 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
       return;
     }
 
+    if (requires2FA && (!twoFactorCode.trim() || twoFactorCode.trim().length !== 6)) {
+      setErrorMessage(t('Please enter the 6-digit code from your Authenticator app.', 'សូមវាយបញ្ចូលលេខកូដ 2FA ចំនួន ៦ ខ្ទង់'));
+      return;
+    }
+
     setApproving(true);
     setErrorMessage('');
 
     try {
-      const res = await authService.approveQrLogin(qrToken, {
+      const payload = {
         username: username.trim(),
         password: password.trim(),
         trustThisDevice,
         deviceName: getBrowserDeviceName()
-      });
+      };
+      if (twoFactorCode.trim()) {
+        payload.twoFactorCode = twoFactorCode.trim();
+      }
+
+      const res = await authService.approveQrLogin(qrToken, payload);
+
+      if (res?.requiresTwoFactor) {
+        setRequires2FA(true);
+        setApproving(false);
+        return;
+      }
 
       // Save trusted device locally so next time it won't ask for credentials
       if (res.trustedDevice?.deviceId && res.trustedDevice?.deviceSecret) {
@@ -583,6 +602,35 @@ export const QrApprovalPage = ({ onNavigateLogin, onNavigateDashboard }) => {
                       </button>
                     </div>
                   </div>
+
+                  {/* 2FA Passcode field if account requires 2FA */}
+                  {requires2FA && (
+                    <div className="p-3.5 bg-sky-50 border border-sky-200/90 rounded-2xl space-y-2 animate-scale-in">
+                      <div className="flex items-start gap-2 text-xs text-sky-900 font-medium">
+                        <KeyRound className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                        <span>
+                          {t(
+                            '2FA Protection Active: Enter the 6-digit passcode from your Authenticator app (Google/Microsoft Authenticator) to pair this phone.',
+                            'ប្រព័ន្ធសុវត្ថិភាព 2FA៖ សូមវាយបញ្ចូលលេខកូដ ៦ ខ្ទង់ពីកម្មវិធី Authenticator ដើម្បីភ្ជាប់ឧបករណ៍នេះ។'
+                          )}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            required
+                            autoFocus
+                            maxLength={6}
+                            value={twoFactorCode}
+                            onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, ''))}
+                            placeholder="123456"
+                            className="form-input text-center text-base tracking-[0.3em] font-mono font-bold h-11 rounded-xl bg-white border-sky-300 focus:border-sky-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Trust this device checkbox */}
                   <label className="flex items-center gap-2.5 text-xs text-slate-700 cursor-pointer pt-1 select-none">

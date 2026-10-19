@@ -208,5 +208,45 @@ export const authService = {
     } catch (error) {
       return { success: false };
     }
+  },
+
+  // QR Code Login: Revoke all devices for current user
+  async revokeAllTrustedDevices() {
+    try {
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_REVOKE_ALL_DEVICES);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to revoke devices';
+    }
+  },
+
+  // QR Code Login: Get settings (system enabled, user enabled, devices)
+  async getQrSettings() {
+    try {
+      const response = await apiClient.get(API_CONFIG.ENDPOINTS.AUTH.QR_SETTINGS);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to get QR settings';
+    }
+  },
+
+  // QR Code Login: Enable or disable for current user
+  async toggleUserQr(enabled) {
+    try {
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_TOGGLE_USER, { enabled });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to update QR setting';
+    }
+  },
+
+  // QR Code Login: Enable or disable globally (Admin only)
+  async toggleSystemQr(enabled) {
+    try {
+      const response = await apiClient.post(API_CONFIG.ENDPOINTS.AUTH.QR_TOGGLE_SYSTEM, { enabled });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data?.message || error.message || 'Failed to update system QR setting';
+    }
   }
 };

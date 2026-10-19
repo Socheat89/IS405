@@ -36,7 +36,8 @@ public record LoginResponse(
 public record UserResponse(
     int Id,
     string Username,
-    string Email);
+    string Email,
+    bool TwoFactorEnabled = false);
 
 public record MessageResponse(string Message);
 

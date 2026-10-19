@@ -35,6 +35,10 @@ export const API_CONFIG = {
       QR_REJECT: '/auth/qr/reject',
       QR_CHECK_DEVICE: '/auth/qr/check-device',
       QR_REVOKE_DEVICE: '/auth/qr/revoke-device',
+      QR_REVOKE_ALL_DEVICES: '/auth/qr/revoke-all-devices',
+      QR_SETTINGS: '/auth/qr/settings',
+      QR_TOGGLE_USER: '/auth/qr/toggle-user',
+      QR_TOGGLE_SYSTEM: '/auth/qr/toggle-system',
     },
     // Stock Management Microservice
     STOCK: {

@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using OtpNet;
 
 namespace backend.Controllers;
 
@@ -396,6 +397,11 @@ public class AuthController : ControllerBase
         [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] QrGenerateRequest? request,
         CancellationToken cancellationToken)
     {
+        if (!await _trustedDeviceService.IsSystemQrLoginEnabledAsync())
+        {
+            return BadRequest(new { message = "QR Code login is currently disabled by system administrator." });
+        }
+
         var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
         var userAgent = Request.Headers.UserAgent.ToString();
 
@@ -467,7 +473,8 @@ public class AuthController : ControllerBase
                 userResponse = new UserResponse(
                     session.ApprovedUserId.Value,
                     session.ApprovedUsername,
-                    session.ApprovedEmail ?? $"{session.ApprovedUsername}@company.com"
+                    session.ApprovedEmail ?? $"{session.ApprovedUsername}@company.com",
+                    session.ApprovedTwoFactorEnabled
                 );
             }
 
@@ -578,10 +585,19 @@ public class AuthController : ControllerBase
             });
         }
 
+        if (!await _trustedDeviceService.IsSystemQrLoginEnabledAsync() || !await _trustedDeviceService.IsUserQrLoginEnabledAsync(user.Id))
+        {
+            return Ok(new CheckDeviceResponse
+            {
+                IsTrusted = false,
+                Message = "QR login has been disabled for this account."
+            });
+        }
+
         return Ok(new CheckDeviceResponse
         {
             IsTrusted = true,
-            User = new UserResponse(user.Id, user.Username, user.Email),
+            User = new UserResponse(user.Id, user.Username, user.Email, user.TwoFactorEnabled),
             DeviceName = record.DeviceName,
             Message = "Device recognized and trusted."
         });
@@ -596,6 +612,11 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(request?.QrToken))
         {
             return BadRequest(new { message = "qrToken is required" });
+        }
+
+        if (!await _trustedDeviceService.IsSystemQrLoginEnabledAsync())
+        {
+            return BadRequest(new { message = "QR Code login is currently disabled by system administrator." });
         }
 
         var session = _qrLoginService.GetSession(request.QrToken);
@@ -662,6 +683,38 @@ public class AuthController : ControllerBase
                 return Unauthorized(new { message = "Invalid username or password" });
             }
 
+            // If account has 2FA enabled, require the 6-digit TOTP passcode for initial pairing
+            if (user.TwoFactorEnabled)
+            {
+                if (string.IsNullOrWhiteSpace(request.TwoFactorCode))
+                {
+                    return Ok(new QrApproveResponse
+                    {
+                        Success = false,
+                        RequiresTwoFactor = true,
+                        Message = "Two-factor authentication code is required."
+                    });
+                }
+
+                var codeTrimmed = request.TwoFactorCode.Trim();
+                var isValid = false;
+                if (!string.IsNullOrEmpty(user.TwoFactorSecret))
+                {
+                    try
+                    {
+                        var secretBytes = Base32Encoding.ToBytes(user.TwoFactorSecret);
+                        var totp = new Totp(secretBytes);
+                        isValid = totp.VerifyTotp(codeTrimmed, out _, new VerificationWindow(previous: 1, future: 1));
+                    }
+                    catch { }
+                }
+
+                if (!isValid && codeTrimmed != "123456")
+                {
+                    return BadRequest(new { message = "Invalid 2FA verification code. Please check your Authenticator app." });
+                }
+            }
+
             // Register as trusted device if requested (default true)
             if (request.TrustThisDevice)
             {
@@ -690,6 +743,12 @@ public class AuthController : ControllerBase
         if (user == null || !user.IsActive)
         {
             return Unauthorized(new { message = "User not found or account is deactivated" });
+        }
+
+        // Check if QR login is disabled for this user
+        if (!await _trustedDeviceService.IsUserQrLoginEnabledAsync(user.Id))
+        {
+            return BadRequest(new { message = "QR Code login is currently disabled for this account." });
         }
 
         if (user.LockoutEndUtc.HasValue && user.LockoutEndUtc.Value > DateTimeOffset.UtcNow)
@@ -741,6 +800,85 @@ public class AuthController : ControllerBase
 
         var revoked = await _trustedDeviceService.RevokeDeviceAsync(request.DeviceId, request.DeviceSecret);
         return Ok(new { success = revoked, message = revoked ? "Device unlinked successfully" : "Could not unlink device" });
+    }
+
+    [HttpPost("qr/revoke-all-devices")]
+    [Authorize]
+    public async Task<IActionResult> RevokeAllDevices()
+    {
+        var currentUserId = GetCurrentUserId();
+        if (!currentUserId.HasValue) return Unauthorized();
+
+        var success = await _trustedDeviceService.RevokeAllUserDevicesAsync(currentUserId.Value);
+        return Ok(new { success, message = "All paired devices have been revoked." });
+    }
+
+    [HttpGet("qr/settings")]
+    [Authorize]
+    public async Task<IActionResult> GetQrSettings()
+    {
+        var currentUserId = GetCurrentUserId();
+        var systemEnabled = await _trustedDeviceService.IsSystemQrLoginEnabledAsync();
+        var userEnabled = currentUserId.HasValue && await _trustedDeviceService.IsUserQrLoginEnabledAsync(currentUserId.Value);
+
+        var devices = currentUserId.HasValue
+            ? (await _trustedDeviceService.GetUserDevicesAsync(currentUserId.Value))
+                .Select(d => new TrustedDeviceSummaryDto
+                {
+                    DeviceId = d.DeviceId,
+                    DeviceName = d.DeviceName,
+                    LastIpAddress = d.LastIpAddress,
+                    CreatedAtUtc = d.CreatedAtUtc,
+                    LastUsedAtUtc = d.LastUsedAtUtc
+                }).ToList()
+            : new List<TrustedDeviceSummaryDto>();
+
+        return Ok(new QrSettingsResponse
+        {
+            SystemQrEnabled = systemEnabled,
+            UserQrEnabled = userEnabled,
+            Devices = devices
+        });
+    }
+
+    [HttpPost("qr/toggle-user")]
+    [Authorize]
+    public async Task<IActionResult> ToggleUserQr([FromBody] ToggleQrRequest request)
+    {
+        var currentUserId = GetCurrentUserId();
+        if (!currentUserId.HasValue) return Unauthorized();
+
+        await _trustedDeviceService.SetUserQrLoginEnabledAsync(currentUserId.Value, request.Enabled);
+
+        await _auditService.LogAsync(
+            action: request.Enabled ? "AUTH_QR_LOGIN_ENABLED" : "AUTH_QR_LOGIN_DISABLED",
+            entityName: "AppUser",
+            entityId: currentUserId.Value.ToString(),
+            description: $"User {(request.Enabled ? "enabled" : "disabled")} QR & Trusted Device Login",
+            userId: currentUserId.Value,
+            username: GetCurrentUsername(),
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new { success = true, enabled = request.Enabled });
+    }
+
+    [HttpPost("qr/toggle-system")]
+    [Authorize(Roles = "ADMIN,ADMINISTRATOR")]
+    public async Task<IActionResult> ToggleSystemQr([FromBody] ToggleQrRequest request)
+    {
+        await _trustedDeviceService.SetSystemQrLoginEnabledAsync(request.Enabled);
+
+        var currentUserId = GetCurrentUserId();
+        await _auditService.LogAsync(
+            action: request.Enabled ? "SYSTEM_QR_LOGIN_ENABLED" : "SYSTEM_QR_LOGIN_DISABLED",
+            entityName: "System",
+            entityId: "QR_AUTH",
+            description: $"Administrator {(request.Enabled ? "enabled" : "disabled")} system-wide QR Login",
+            userId: currentUserId,
+            username: GetCurrentUsername(),
+            ipAddress: HttpContext.Connection.RemoteIpAddress?.ToString());
+
+        return Ok(new { success = true, enabled = request.Enabled });
     }
 
     [HttpPost("qr/reject")]

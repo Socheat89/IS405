@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { settingsService } from '../../services/settings/settingsService';
 import { warehouseService } from '../../services/stock/warehouseService';
+import { authService } from '../../services/auth/authService';
 import { WarehouseModal } from '../stock/warehouses/WarehouseModal';
 import { useToast } from '../../context/ToastContext';
 
@@ -17,6 +18,8 @@ export const SystemSettingsPage = () => {
   const [auditLogs, setAuditLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('company'); // 'company' | 'warehouses' | 'security' | 'microservices' | 'logs'
   const [loading, setLoading] = useState(true);
+  const [systemQrEnabled, setSystemQrEnabled] = useState(true);
+  const [togglingQr, setTogglingQr] = useState(false);
 
   // Warehouse Modal State
   const [warehouseModalOpen, setWarehouseModalOpen] = useState(false);
@@ -24,14 +27,18 @@ export const SystemSettingsPage = () => {
 
   const loadAllData = async () => {
     try {
-      const [s, whList, logs] = await Promise.all([
+      const [s, whList, logs, qrSettings] = await Promise.all([
         settingsService.getSettings(),
         warehouseService.getWarehouses(false),
         settingsService.getAuditLogs(),
+        authService.getQrSettings().catch(() => null),
       ]);
       setSettings(s);
       setWarehouses(whList || s?.warehouses || []);
       setAuditLogs(logs || []);
+      if (qrSettings && typeof qrSettings.systemQrLoginEnabled === 'boolean') {
+        setSystemQrEnabled(qrSettings.systemQrLoginEnabled);
+      }
     } catch (err) {
       console.warn('Failed to load settings:', err?.message);
     } finally {
@@ -57,6 +64,24 @@ export const SystemSettingsPage = () => {
 
   const updateSetting = (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleToggleSystemQr = async (enabled) => {
+    setTogglingQr(true);
+    try {
+      const res = await authService.toggleSystemQr(enabled);
+      setSystemQrEnabled(res.systemQrLoginEnabled);
+      toast.success(
+        enabled
+          ? 'Mobile QR Code & Trusted Device Login enabled system-wide!'
+          : 'Mobile QR Code & Trusted Device Login disabled system-wide!',
+        'Security Policy Updated'
+      );
+    } catch (err) {
+      toast.error(err?.message || 'Failed to update QR Login policy');
+    } finally {
+      setTogglingQr(false);
+    }
   };
 
   const handleCreateWarehouse = () => {
@@ -506,6 +531,31 @@ export const SystemSettingsPage = () => {
                 type="checkbox"
                 checked={settings.requireStrongPassword !== false}
                 onChange={(e) => updateSetting('requireStrongPassword', e.target.checked)}
+                className="w-5 h-5 accent-[#2089C8] rounded cursor-pointer"
+              />
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 text-xs block">Allow Mobile QR Code &amp; Trusted Device Login</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    systemQrEnabled 
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                  }`}>
+                    {systemQrEnabled ? 'Allowed' : 'Disabled System-wide'}
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500 block mt-0.5">
+                  When disabled, users cannot generate login QR codes or approve desktop sessions from mobile devices. This operates completely independently from 2FA TOTP policies.
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                disabled={togglingQr}
+                checked={systemQrEnabled}
+                onChange={(e) => handleToggleSystemQr(e.target.checked)}
                 className="w-5 h-5 accent-[#2089C8] rounded cursor-pointer"
               />
             </div>

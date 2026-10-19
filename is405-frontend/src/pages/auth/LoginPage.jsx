@@ -311,6 +311,26 @@ export const LoginPage = () => {
                     <div className="w-8 h-8 border-3 border-emerald-500/30 border-t-emerald-600 rounded-full animate-spin" />
                     <span className="text-[11px] font-medium">{t('Generating QR Code...', 'កំពុងបង្កើត QR Code...')}</span>
                   </div>
+                ) : qrStatus === 'Error' ? (
+                  <div className="w-[200px] h-[200px] flex flex-col items-center justify-center gap-2 bg-rose-50/80 rounded-2xl p-4 text-center">
+                    <div className="w-10 h-10 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-bold text-rose-800">
+                      {t('QR Login Unavailable', 'មិនអាចប្រើ QR បានទេ')}
+                    </span>
+                    <p className="text-[10px] text-slate-500 line-clamp-2">
+                      {error || t('QR login is currently disabled by policy.', 'មុខងារ QR ត្រូវបានបិទ។')}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('password')}
+                      className="mt-1 px-3 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-[11px] font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1"
+                    >
+                      <User className="w-3 h-3" />
+                      <span>{t('Use Password', 'ប្រើលេខសម្ងាត់')}</span>
+                    </button>
+                  </div>
                 ) : qrStatus === 'Expired' || qrStatus === 'Rejected' ? (
                   <div className="w-[200px] h-[200px] flex flex-col items-center justify-center gap-3 bg-slate-100 rounded-2xl p-4 text-center">
                     <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">

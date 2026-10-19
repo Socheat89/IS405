@@ -4,10 +4,20 @@ using System.Text.Json;
 
 namespace backend.Services.QrAuth;
 
+public class QrAuthSettings
+{
+    public bool SystemQrEnabled { get; set; } = true;
+    public List<int> DisabledUserIds { get; set; } = [];
+}
+
 public class TrustedDeviceService : ITrustedDeviceService
 {
     private readonly ConcurrentDictionary<string, TrustedDeviceRecord> _devices = new();
+    private readonly ConcurrentDictionary<int, bool> _disabledUsers = new();
+    private bool _systemQrEnabled = true;
+
     private readonly string _storageFilePath;
+    private readonly string _settingsFilePath;
     private readonly SemaphoreSlim _fileLock = new(1, 1);
     private bool _isLoaded;
 
@@ -28,6 +38,7 @@ public class TrustedDeviceService : ITrustedDeviceService
         }
 
         _storageFilePath = Path.Combine(dataDir, "trusted_devices.json");
+        _settingsFilePath = Path.Combine(dataDir, "qr_settings.json");
         LoadFromFile();
     }
 
@@ -37,6 +48,7 @@ public class TrustedDeviceService : ITrustedDeviceService
 
         try
         {
+            // 1. Load Devices
             if (File.Exists(_storageFilePath))
             {
                 var json = File.ReadAllText(_storageFilePath);
@@ -52,10 +64,28 @@ public class TrustedDeviceService : ITrustedDeviceService
                     }
                 }
             }
+
+            // 2. Load Settings
+            if (File.Exists(_settingsFilePath))
+            {
+                var settingsJson = File.ReadAllText(_settingsFilePath);
+                var settings = JsonSerializer.Deserialize<QrAuthSettings>(settingsJson);
+                if (settings != null)
+                {
+                    _systemQrEnabled = settings.SystemQrEnabled;
+                    if (settings.DisabledUserIds != null)
+                    {
+                        foreach (var uId in settings.DisabledUserIds)
+                        {
+                            _disabledUsers[uId] = true;
+                        }
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[TrustedDeviceService] Notice: Could not read trusted devices file: {ex.Message}");
+            Console.WriteLine($"[TrustedDeviceService] Notice: Could not read storage files: {ex.Message}");
         }
         finally
         {
@@ -75,6 +105,29 @@ public class TrustedDeviceService : ITrustedDeviceService
         catch (Exception ex)
         {
             Console.WriteLine($"[TrustedDeviceService] Warning: Could not write trusted devices file: {ex.Message}");
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    private async Task SaveSettingsToFileAsync()
+    {
+        await _fileLock.WaitAsync();
+        try
+        {
+            var settings = new QrAuthSettings
+            {
+                SystemQrEnabled = _systemQrEnabled,
+                DisabledUserIds = _disabledUsers.Keys.ToList()
+            };
+            var json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(_settingsFilePath, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[TrustedDeviceService] Warning: Could not write qr_settings file: {ex.Message}");
         }
         finally
         {
@@ -166,5 +219,71 @@ public class TrustedDeviceService : ITrustedDeviceService
         }
 
         return false;
+    }
+
+    public async Task<bool> RevokeAllUserDevicesAsync(int userId)
+    {
+        bool anyRevoked = false;
+        foreach (var dev in _devices.Values)
+        {
+            if (dev.UserId == userId && !dev.IsRevoked)
+            {
+                dev.IsRevoked = true;
+                anyRevoked = true;
+            }
+        }
+
+        if (anyRevoked)
+        {
+            await SaveToFileAsync();
+        }
+
+        return true;
+    }
+
+    public Task<List<TrustedDeviceRecord>> GetUserDevicesAsync(int userId)
+    {
+        var list = _devices.Values
+            .Where(d => d.UserId == userId && !d.IsRevoked)
+            .OrderByDescending(d => d.LastUsedAtUtc)
+            .ToList();
+
+        return Task.FromResult(list);
+    }
+
+    public Task<bool> IsSystemQrLoginEnabledAsync()
+    {
+        return Task.FromResult(_systemQrEnabled);
+    }
+
+    public async Task SetSystemQrLoginEnabledAsync(bool enabled)
+    {
+        _systemQrEnabled = enabled;
+        await SaveSettingsToFileAsync();
+    }
+
+    public Task<bool> IsUserQrLoginEnabledAsync(int userId)
+    {
+        // If system is disabled, user is also disabled
+        if (!_systemQrEnabled) return Task.FromResult(false);
+
+        var isDisabled = _disabledUsers.ContainsKey(userId);
+        return Task.FromResult(!isDisabled);
+    }
+
+    public async Task SetUserQrLoginEnabledAsync(int userId, bool enabled)
+    {
+        if (enabled)
+        {
+            _disabledUsers.TryRemove(userId, out _);
+        }
+        else
+        {
+            _disabledUsers[userId] = true;
+            // Also revoke all existing paired devices for this user
+            await RevokeAllUserDevicesAsync(userId);
+        }
+
+        await SaveSettingsToFileAsync();
     }
 }

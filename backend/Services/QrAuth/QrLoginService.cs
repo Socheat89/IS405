@@ -105,6 +105,7 @@ public class QrLoginService : IQrLoginService
         session.ApprovedUserId = user.Id;
         session.ApprovedUsername = user.Username;
         session.ApprovedEmail = user.Email;
+        session.ApprovedTwoFactorEnabled = user.TwoFactorEnabled;
         session.AccessToken = accessToken;
         session.AccessTokenExpiresAt = expiresAt;
 

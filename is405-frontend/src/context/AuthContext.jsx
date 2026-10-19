@@ -389,9 +389,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const loginWithQr = (accessToken, userInfo) => {
-    completeAuthentication(accessToken, userInfo || {
-      username: 'User',
-      email: 'user@company.com'
+    completeAuthentication(accessToken, {
+      id: userInfo?.id,
+      username: userInfo?.username || 'User',
+      email: userInfo?.email || 'user@company.com',
+      twoFactorEnabled: Boolean(userInfo?.twoFactorEnabled)
     });
   };
 
